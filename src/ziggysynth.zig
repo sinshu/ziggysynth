@@ -260,6 +260,9 @@ const SoundFontParameters = struct
         _ = instrument_generators orelse return ZiggySynthError.InvalidSoundFont;
         _ = sample_headers orelse return ZiggySynthError.InvalidSoundFont;
 
+        const instrument_zones = try Zone.create(allocator, instrument_bag.?, instrument_generators.?);
+        defer allocator.free(instrument_zones);
+
         return Self
         {
             .sample_headers = sample_headers.?,
@@ -308,6 +311,124 @@ const Generator = struct
         _ = try Generator.init(reader);
 
         return generators;
+    }
+};
+
+const GeneratorType = struct
+{
+    const START_ADDRESS_OFFSET: u16 = 0;
+    const END_ADDRESS_OFFSET: u16 = 1;
+    const START_LOOP_ADDRESS_OFFSET: u16 = 2;
+    const END_LOOP_ADDRESS_OFFSET: u16 = 3;
+    const START_ADDRESS_COARSE_OFFSET: u16 = 4;
+    const MODULATION_LFO_TO_PITCH: u16 = 5;
+    const VIBRATO_LFO_TO_PITCH: u16 = 6;
+    const MODULATION_ENVELOPE_TO_PITCH: u16 = 7;
+    const INITIAL_FILTER_CUTOFF_FREQUENCY: u16 = 8;
+    const INITIAL_FILTER_Q: u16 = 9;
+    const MODULATION_LFO_TO_FILTER_CUTOFF_FREQUENCY: u16 = 10;
+    const MODULATION_ENVELOPE_TO_FILTER_CUTOFF_FREQUENCY: u16 = 11;
+    const END_ADDRESS_COARSE_OFFSET: u16 = 12;
+    const MODULATION_LFO_TO_VOLUME: u16 = 13;
+    const UNUSED_1: u16 = 14;
+    const CHORUS_EFFECTS_SEND: u16 = 15;
+    const REVERB_EFFECTS_SEND: u16 = 16;
+    const PAN: u16 = 17;
+    const UNUSED_2: u16 = 18;
+    const UNUSED_3: u16 = 19;
+    const UNUSED_4: u16 = 20;
+    const DELAY_MODULATION_LFO: u16 = 21;
+    const FREQUENCY_MODULATION_LFO: u16 = 22;
+    const DELAY_VIBRATO_LFO: u16 = 23;
+    const FREQUENCY_VIBRATO_LFO: u16 = 24;
+    const DELAY_MODULATION_ENVELOPE: u16 = 25;
+    const ATTACK_MODULATION_ENVELOPE: u16 = 26;
+    const HOLD_MODULATION_ENVELOPE: u16 = 27;
+    const DECAY_MODULATION_ENVELOPE: u16 = 28;
+    const SUSTAIN_MODULATION_ENVELOPE: u16 = 29;
+    const RELEASE_MODULATION_ENVELOPE: u16 = 30;
+    const KEY_NUMBER_TO_MODULATION_ENVELOPE_HOLD: u16 = 31;
+    const KEY_NUMBER_TO_MODULATION_ENVELOPE_DECAY: u16 = 32;
+    const DELAY_VOLUME_ENVELOPE: u16 = 33;
+    const ATTACK_VOLUME_ENVELOPE: u16 = 34;
+    const HOLD_VOLUME_ENVELOPE: u16 = 35;
+    const DECAY_VOLUME_ENVELOPE: u16 = 36;
+    const SUSTAIN_VOLUME_ENVELOPE: u16 = 37;
+    const RELEASE_VOLUME_ENVELOPE: u16 = 38;
+    const KEY_NUMBER_TO_VOLUME_ENVELOPE_HOLD: u16 = 39;
+    const KEY_NUMBER_TO_VOLUME_ENVELOPE_DECAY: u16 = 40;
+    const INSTRUMENT: u16 = 41;
+    const RESERVED_1: u16 = 42;
+    const KEY_RANGE: u16 = 43;
+    const VELOCITY_RANGE: u16 = 44;
+    const START_LOOP_ADDRESS_COARSE_OFFSET: u16 = 45;
+    const KEY_NUMBER: u16 = 46;
+    const VELOCITY: u16 = 47;
+    const INITIAL_ATTENUATION: u16 = 48;
+    const RESERVED_2: u16 = 49;
+    const END_LOOP_ADDRESS_COARSE_OFFSET: u16 = 50;
+    const COARSE_TUNE: u16 = 51;
+    const FINE_TUNE: u16 = 52;
+    const SAMPLE_ID: u16 = 53;
+    const SAMPLE_MODES: u16 = 54;
+    const RESERVED_3: u16 = 55;
+    const SCALE_TUNING: u16 = 56;
+    const EXCLUSIVE_CLASS: u16 = 57;
+    const OVERRIDING_ROOT_KEY: u16 = 58;
+    const UNUSED_5: u16 = 59;
+    const UNUSED_END: u16 = 60;
+
+    const COUNT: usize = 61;
+};
+
+const Zone = struct
+{
+    const Self = @This();
+
+    const empty_generators: [0]Generator = .{};
+
+    generators: []Generator,
+
+    fn empty() Self
+    {
+        return Self
+        {
+            .generators = &empty_generators,
+        };
+    }
+
+    fn init(info: *ZoneInfo, generators: []Generator) Self
+    {
+        const start = info.generator_index;
+        const end = start + info.generator_count;
+        var segment = generators[start..end];
+
+        return Self
+        {
+            .generators = segment,
+        };
+    }
+
+    fn create(allocator: Allocator, infos: []ZoneInfo, generators: []Generator) ![]Self
+    {
+        if (infos.len <= 1)
+        {
+            return ZiggySynthError.InvalidSoundFont;
+        }
+
+        // The last one is the terminator.
+        const count = infos.len - 1;
+
+        var zones = try allocator.alloc(Self, count);
+        errdefer allocator.free(zones);
+        
+        var i: usize = 0;
+        while (i < count) : (i += 1)
+        {
+            zones[i] = Zone.init(&infos[i], generators);
+        }
+
+        return zones;
     }
 };
 
@@ -365,6 +486,16 @@ const ZoneInfo = struct
 
         return zones;
     }
+};
+
+const Preset = struct
+{
+    const Self = @This();
+};
+
+const PresetRegion = struct
+{
+    const Self = @This();
 };
 
 const PresetInfo = struct
@@ -432,6 +563,115 @@ const PresetInfo = struct
         }
 
         return presets;
+    }
+};
+
+const Instrument = struct
+{
+    const Self = @This();
+};
+
+const InstrumentRegion = struct
+{
+    const Self = @This();
+
+    sample: *SampleHeader,
+    gs: [GeneratorType.COUNT]i16,
+
+    fn set_parameter(gs: *[GeneratorType.COUNT]i16, generator: *Generator) void
+    {
+        const index = generator.generator_type;
+
+        // Unknown generators should be ignored.
+        if (index < gs.len)
+        {
+            gs[index] = generator.value;
+        }
+    }
+
+    fn init(global: *Zone, local: *Zone, samples: []SampleHeader) !Self
+    {
+        var gs = mem.zeroes([GeneratorType.COUNT]u8);
+        gs[GeneratorType.INITIAL_FILTER_CUTOFF_FREQUENCY] = 13500;
+        gs[GeneratorType.DELAY_MODULATION_LFO] = -12000;
+        gs[GeneratorType.DELAY_VIBRATO_LFO] = -12000;
+        gs[GeneratorType.DELAY_MODULATION_ENVELOPE] = -12000;
+        gs[GeneratorType.ATTACK_MODULATION_ENVELOPE] = -12000;
+        gs[GeneratorType.HOLD_MODULATION_ENVELOPE] = -12000;
+        gs[GeneratorType.DECAY_MODULATION_ENVELOPE] = -12000;
+        gs[GeneratorType.RELEASE_MODULATION_ENVELOPE] = -12000;
+        gs[GeneratorType.DELAY_VOLUME_ENVELOPE] = -12000;
+        gs[GeneratorType.ATTACK_VOLUME_ENVELOPE] = -12000;
+        gs[GeneratorType.HOLD_VOLUME_ENVELOPE] = -12000;
+        gs[GeneratorType.DECAY_VOLUME_ENVELOPE] = -12000;
+        gs[GeneratorType.RELEASE_VOLUME_ENVELOPE] = -12000;
+        gs[GeneratorType.KEY_RANGE] = 0x7F00;
+        gs[GeneratorType.VELOCITY_RANGE] = 0x7F00;
+        gs[GeneratorType.KEY_NUMBER] = -1;
+        gs[GeneratorType.VELOCITY] = -1;
+        gs[GeneratorType.SCALE_TUNING] = 100;
+        gs[GeneratorType.OVERRIDING_ROOT_KEY] = -1;
+
+        for (global.generators) |value|
+        {
+            set_parameter(&gs, &value);
+        }
+
+        for (local.generators) |value|
+        {
+            set_parameter(&gs, &value);
+        }
+
+        const id = @truncate(usize, gs[GeneratorType.SAMPLE_ID]);
+        if (id >= samples.len)
+        {
+            return ZiggySynthError.InvalidSoundFont;
+        }
+        const sample = &samples[id];
+
+        return Self
+        {
+            .sample = sample,
+            .gs = gs,
+        };
+    }
+
+    fn create(allocator: Allocator, zones: []Zone, samples: []SampleHeader) !Self
+    {
+        // Is the first one the global zone?
+        if (zones[0].generators.len == 0 || (zones[0].generators[zones[0].generators.len - 1].generator_type != GeneratorType.SAMPLE_ID))
+        {
+            // The first one is the global zone.
+            const global = &zones[0];
+
+            // The global zone is regarded as the base setting of subsequent zones.
+            const count = zones.len - 1;
+            const regions = try allocator.alloc(Self, count);
+            errdefer allocator.free(regions);
+
+            var i: usize = 0;
+            while (i < count) : (i += 1)
+            {
+                regions[i] = InstrumentRegion.init(global, &zones[i + 1], samples);
+            }
+
+            return regions;
+        }
+        else
+        {
+            // No global zone.
+            const count = zones.len;
+            const regions = try allocator.alloc(Self, count);
+            errdefer allocator.free(regions);
+
+            var i: usize = 0;
+            while (i < count) : (i += 1)
+            {
+                regions[i] = InstrumentRegion.init(&Zone.empty(), &zones[i], samples);
+            }
+
+            return regions;
+        }
     }
 };
 
