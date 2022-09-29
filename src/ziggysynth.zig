@@ -4,6 +4,7 @@ const Allocator = mem.Allocator;
 
 const ZiggySynthError = error {
     InvalidSoundFont,
+    Unknown,
 };
 
 const BinaryReader = struct
@@ -23,16 +24,19 @@ pub const SoundFont = struct
     allocator: Allocator,
     wave_data: []i16,
     sample_headers: []SampleHeader,
+    instrument_regions: []InstrumentRegion,
 
     pub fn init(allocator: Allocator, reader: anytype) !Self
     {
         var wave_data: ?[]i16 = null;
         var sample_headers: ?[]SampleHeader = null;
+        var instrument_regions: ?[]InstrumentRegion = null;
 
         errdefer
         {
             if (wave_data) |value| allocator.free(value);
             if (sample_headers) |value| allocator.free(value);
+            if (instrument_regions) |value| allocator.free(value);
         }
 
         const chunk_id = try BinaryReader.read([4]u8, reader);
@@ -56,12 +60,14 @@ pub const SoundFont = struct
 
         const parameters = try SoundFontParameters.init(allocator, reader);
         sample_headers = parameters.sample_headers;
+        instrument_regions = parameters.instrument_regions;
 
         return Self
         {
             .allocator = allocator,
             .wave_data = wave_data.?,
             .sample_headers = sample_headers.?,
+            .instrument_regions = instrument_regions.?,
         };
     }
 
@@ -69,6 +75,7 @@ pub const SoundFont = struct
     {
         self.allocator.free(self.wave_data);
         self.allocator.free(self.sample_headers);
+        self.allocator.free(self.instrument_regions);
     }
 
     fn skipInfo(reader: anytype) !void
@@ -157,6 +164,7 @@ const SoundFontParameters = struct
     const Self = @This();
 
     sample_headers: []SampleHeader,
+    instrument_regions: []InstrumentRegion,
 
     fn init(allocator: Allocator, reader: anytype) !Self
     {
@@ -263,9 +271,13 @@ const SoundFontParameters = struct
         const instrument_zones = try Zone.create(allocator, instrument_bag.?, instrument_generators.?);
         defer allocator.free(instrument_zones);
 
+        const instrument_regions = try InstrumentRegion.create(allocator, instrument_infos.?, instrument_zones, sample_headers.?);
+        errdefer allocator.free(instrument_regions);
+
         return Self
         {
             .sample_headers = sample_headers.?,
+            .instrument_regions = instrument_regions,
         };
     }
 };
@@ -275,12 +287,12 @@ const Generator = struct
     const Self = @This();
 
     generator_type: u16,
-    value: u16,
+    value: i16,
 
     fn init(reader: anytype) !Self
     {
         const generator_type = try BinaryReader.read(u16, reader);
-        const value = try BinaryReader.read(u16, reader);
+        const value = try BinaryReader.read(i16, reader);
 
         return Self
         {
@@ -578,7 +590,49 @@ const InstrumentRegion = struct
     sample: *SampleHeader,
     gs: [GeneratorType.COUNT]i16,
 
-    fn set_parameter(gs: *[GeneratorType.COUNT]i16, generator: *Generator) void
+    fn contains_global_zone(zones: []Zone) bool
+    {
+        if (zones[0].generators.len == 0)
+        {
+            return true;
+        }
+
+        if (zones[0].generators[zones[0].generators.len - 1].generator_type != GeneratorType.SAMPLE_ID)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    fn count_regions(instruments: []InstrumentInfo, all_zones: []Zone) usize
+    {
+        var sum: usize = 0;
+
+        // The last one is the terminator.
+        var instrument_index: usize = 0;
+        while (instrument_index < instruments.len - 1) : (instrument_index += 1)
+        {
+            const info = instruments[instrument_index];
+            const zones = all_zones[info.zone_start_index..info.zone_end_index];
+
+            // Is the first one the global zone?
+            if (InstrumentRegion.contains_global_zone(zones))
+            {
+                // The first one is the global zone.
+                sum += zones.len - 1;
+            }
+            else
+            {
+                // No global zone.
+                sum += zones.len;
+            }
+        }
+
+        return sum;
+    }
+
+    fn set_parameter(gs: *[GeneratorType.COUNT]i16, generator: *const Generator) void
     {
         const index = generator.generator_type;
 
@@ -589,9 +643,9 @@ const InstrumentRegion = struct
         }
     }
 
-    fn init(global: *Zone, local: *Zone, samples: []SampleHeader) !Self
+    fn init(global: *const Zone, local: *const Zone, samples: []SampleHeader) !Self
     {
-        var gs = mem.zeroes([GeneratorType.COUNT]u8);
+        var gs = mem.zeroes([GeneratorType.COUNT]i16);
         gs[GeneratorType.INITIAL_FILTER_CUTOFF_FREQUENCY] = 13500;
         gs[GeneratorType.DELAY_MODULATION_LFO] = -12000;
         gs[GeneratorType.DELAY_VIBRATO_LFO] = -12000;
@@ -622,7 +676,7 @@ const InstrumentRegion = struct
             set_parameter(&gs, &value);
         }
 
-        const id = @truncate(usize, gs[GeneratorType.SAMPLE_ID]);
+        const id = @intCast(usize, gs[GeneratorType.SAMPLE_ID]);
         if (id >= samples.len)
         {
             return ZiggySynthError.InvalidSoundFont;
@@ -636,42 +690,48 @@ const InstrumentRegion = struct
         };
     }
 
-    fn create(allocator: Allocator, zones: []Zone, samples: []SampleHeader) !Self
+    fn create(allocator: Allocator, instruments: []InstrumentInfo, all_zones: []Zone, samples: []SampleHeader) ![]Self
     {
-        // Is the first one the global zone?
-        if (zones[0].generators.len == 0 || (zones[0].generators[zones[0].generators.len - 1].generator_type != GeneratorType.SAMPLE_ID))
+        var regions = try allocator.alloc(Self, InstrumentRegion.count_regions(instruments, all_zones));
+        errdefer allocator.free(regions);
+        var region_index: usize = 0;
+
+        // The last one is the terminator.
+        var instrument_index: usize = 0;
+        while (instrument_index < instruments.len - 1) : (instrument_index += 1)
         {
-            // The first one is the global zone.
-            const global = &zones[0];
+            const info = instruments[instrument_index];
+            const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
-            // The global zone is regarded as the base setting of subsequent zones.
-            const count = zones.len - 1;
-            const regions = try allocator.alloc(Self, count);
-            errdefer allocator.free(regions);
-
-            var i: usize = 0;
-            while (i < count) : (i += 1)
+            // Is the first one the global zone?
+            if (InstrumentRegion.contains_global_zone(zones))
             {
-                regions[i] = InstrumentRegion.init(global, &zones[i + 1], samples);
+                // The first one is the global zone.
+                var i: usize = 0;
+                while (i < zones.len - 1) : (i += 1)
+                {
+                    regions[region_index] = try InstrumentRegion.init(&zones[0], &zones[i + 1], samples);
+                    region_index += 1;
+                }
             }
-
-            return regions;
+            else
+            {
+                // No global zone.
+                var i: usize = 0;
+                while (i < zones.len) : (i += 1)
+                {
+                    regions[region_index] = try InstrumentRegion.init(&Zone.empty(), &zones[i], samples);
+                    region_index += 1;
+                }
+            }
         }
-        else
+
+        if (region_index != regions.len)
         {
-            // No global zone.
-            const count = zones.len;
-            const regions = try allocator.alloc(Self, count);
-            errdefer allocator.free(regions);
-
-            var i: usize = 0;
-            while (i < count) : (i += 1)
-            {
-                regions[i] = InstrumentRegion.init(&Zone.empty(), &zones[i], samples);
-            }
-
-            return regions;
+            return ZiggySynthError.Unknown;
         }
+
+        return regions;
     }
 };
 
@@ -720,7 +780,7 @@ const InstrumentInfo = struct
             var i: usize = 0;
             while (i < count - 1) : (i += 1)
             {
-                instruments[i].zone_end_index = instruments[i + 1].zone_start_index - 1;
+                instruments[i].zone_end_index = instruments[i + 1].zone_start_index;
             }
         }
 
