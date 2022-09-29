@@ -142,6 +142,8 @@ const SoundFontSampleData = struct
             pos += size;
         }
 
+        _ = wave_data orelse return ZiggySynthError.InvalidSoundFont;
+
         return Self
         {
             .bits_per_sample = 16,
