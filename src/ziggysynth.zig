@@ -1,4 +1,5 @@
 const std = @import("std");
+const math = std.math;
 const mem = std.mem;
 const Allocator = mem.Allocator;
 
@@ -14,6 +15,55 @@ const BinaryReader = struct
         var data: [@sizeOf(T)]u8 = undefined;
         _ = try reader.readNoEof(&data);
         return @bitCast(T, data);
+    }
+};
+
+const SoundFontMath = struct
+{
+    const HALF_PI: f32 = math.pi / 2;
+    const NON_AUDIBLE: f32 = 1.0E-3;
+    const LOG_NON_AUDIBLE: f32 = @log(1.0E-3);
+
+    fn timecentsToSeconds(x: f32) f32
+    {
+        return math.pow(f32, 2.0, (1.0 / 1200.0) * x);
+    }
+
+    fn centsToHertz(x: f32) f32
+    {
+        return 8.176 * math.pow(2.0, (1.0 / 1200.0) * x);
+    }
+
+    fn centsToMultiplyingFactor(x: f32) f32
+    {
+        return math.pow(2.0, (1.0 / 1200.0) * x);
+    }
+
+    fn decibelsToLinear(x: f32) f32
+    {
+        return math.pow(10.0, 0.05 * x);
+    }
+
+    fn linearToDecibels(x: f32) f32
+    {
+        return 20.0 * @log10(x);
+    }
+
+    fn keyNumberToMultiplyingFactor(cents: i32, key: i32) f32
+    {
+        return timecentsToSeconds(cents * (60 - key));
+    }
+
+    fn expCutoff(x: f64) f64
+    {
+        if (x < SoundFontMath.LOG_NON_AUDIBLE)
+        {
+            return 0.0;
+        }
+        else
+        {
+            return @exp(x);
+        }
     }
 };
 
