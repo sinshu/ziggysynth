@@ -756,19 +756,19 @@ const InstrumentRegion = struct
         };
     }
 
-    fn create(allocator: Allocator, instruments: []InstrumentInfo, all_zones: []Zone, samples: []SampleHeader) ![]Self
+    fn create(allocator: Allocator, infos: []InstrumentInfo, all_zones: []Zone, samples: []SampleHeader) ![]Self
     {
         // The last one is the terminator.
-        const instrument_count = instruments.len - 1;
+        const instrument_count = infos.len - 1;
 
-        var regions = try allocator.alloc(Self, InstrumentRegion.count_regions(instruments, all_zones));
+        var regions = try allocator.alloc(Self, InstrumentRegion.count_regions(infos, all_zones));
         errdefer allocator.free(regions);
         var region_index: usize = 0;
 
         var instrument_index: usize = 0;
         while (instrument_index < instrument_count) : (instrument_index += 1)
         {
-            const info = instruments[instrument_index];
+            const info = infos[instrument_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
             // Is the first one the global zone?
