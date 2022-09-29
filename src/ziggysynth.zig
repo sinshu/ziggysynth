@@ -24,18 +24,21 @@ pub const SoundFont = struct
     allocator: Allocator,
     wave_data: []i16,
     sample_headers: []SampleHeader,
+    instruments: []Instrument,
     instrument_regions: []InstrumentRegion,
 
     pub fn init(allocator: Allocator, reader: anytype) !Self
     {
         var wave_data: ?[]i16 = null;
         var sample_headers: ?[]SampleHeader = null;
+        var instruments: ?[]Instrument = null;
         var instrument_regions: ?[]InstrumentRegion = null;
 
         errdefer
         {
             if (wave_data) |value| allocator.free(value);
             if (sample_headers) |value| allocator.free(value);
+            if (instruments) |value| allocator.free(value);
             if (instrument_regions) |value| allocator.free(value);
         }
 
@@ -60,6 +63,7 @@ pub const SoundFont = struct
 
         const parameters = try SoundFontParameters.init(allocator, reader);
         sample_headers = parameters.sample_headers;
+        instruments = parameters.instruments;
         instrument_regions = parameters.instrument_regions;
 
         return Self
@@ -67,6 +71,7 @@ pub const SoundFont = struct
             .allocator = allocator,
             .wave_data = wave_data.?,
             .sample_headers = sample_headers.?,
+            .instruments = instruments.?,
             .instrument_regions = instrument_regions.?,
         };
     }
@@ -75,6 +80,7 @@ pub const SoundFont = struct
     {
         self.allocator.free(self.wave_data);
         self.allocator.free(self.sample_headers);
+        self.allocator.free(self.instruments);
         self.allocator.free(self.instrument_regions);
     }
 
@@ -164,6 +170,7 @@ const SoundFontParameters = struct
     const Self = @This();
 
     sample_headers: []SampleHeader,
+    instruments: []Instrument,
     instrument_regions: []InstrumentRegion,
 
     fn init(allocator: Allocator, reader: anytype) !Self
@@ -274,9 +281,13 @@ const SoundFontParameters = struct
         const instrument_regions = try InstrumentRegion.create(allocator, instrument_infos.?, instrument_zones, sample_headers.?);
         errdefer allocator.free(instrument_regions);
 
+        const instruments = try Instrument.create(allocator, instrument_infos.?, instrument_zones, instrument_regions);
+        errdefer allocator.free(instruments);
+
         return Self
         {
             .sample_headers = sample_headers.?,
+            .instruments = instruments,
             .instrument_regions = instrument_regions,
         };
     }
@@ -581,6 +592,59 @@ const PresetInfo = struct
 const Instrument = struct
 {
     const Self = @This();
+
+    name: [20]u8,
+    regions: []InstrumentRegion,
+
+    fn init(name: [20]u8, regions: []InstrumentRegion) Self
+    {
+        return Self
+        {
+            .name = name,
+            .regions = regions,
+        };
+    }
+
+    fn create(allocator: Allocator, infos: []InstrumentInfo, all_zones: []Zone, all_regions: []InstrumentRegion) ![]Self
+    {
+        // The last one is the terminator.
+        const instrument_count = infos.len - 1;
+
+        var instruments = try allocator.alloc(Self, instrument_count);
+        errdefer allocator.free(instruments);
+
+        var instrument_index: usize = 0;
+        var region_index: usize = 0;
+        while (instrument_index < instrument_count) : (instrument_index += 1)
+        {
+            const info = infos[instrument_index];
+            const zones = all_zones[info.zone_start_index..info.zone_end_index];
+
+            var region_count: usize = undefined;
+            // Is the first one the global zone?
+            if (InstrumentRegion.contains_global_zone(zones))
+            {
+                // The first one is the global zone.
+                region_count = zones.len - 1;
+            }
+            else
+            {
+                // No global zone.
+                region_count = zones.len;
+            }
+
+            const region_end = region_index + region_count;
+            instruments[instrument_index] = Instrument.init(info.name, all_regions[region_index..region_end]);
+            region_index += region_count;
+        }
+
+        if (region_index != all_regions.len)
+        {
+            return ZiggySynthError.Unknown;
+        }
+
+        return instruments;
+    }
 };
 
 const InstrumentRegion = struct
@@ -605,15 +669,17 @@ const InstrumentRegion = struct
         return false;
     }
 
-    fn count_regions(instruments: []InstrumentInfo, all_zones: []Zone) usize
+    fn count_regions(infos: []InstrumentInfo, all_zones: []Zone) usize
     {
+        // The last one is the terminator.
+        const instrument_count = infos.len - 1;
+
         var sum: usize = 0;
 
-        // The last one is the terminator.
         var instrument_index: usize = 0;
-        while (instrument_index < instruments.len - 1) : (instrument_index += 1)
+        while (instrument_index < instrument_count) : (instrument_index += 1)
         {
-            const info = instruments[instrument_index];
+            const info = infos[instrument_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
             // Is the first one the global zone?
@@ -692,13 +758,15 @@ const InstrumentRegion = struct
 
     fn create(allocator: Allocator, instruments: []InstrumentInfo, all_zones: []Zone, samples: []SampleHeader) ![]Self
     {
+        // The last one is the terminator.
+        const instrument_count = instruments.len - 1;
+
         var regions = try allocator.alloc(Self, InstrumentRegion.count_regions(instruments, all_zones));
         errdefer allocator.free(regions);
         var region_index: usize = 0;
 
-        // The last one is the terminator.
         var instrument_index: usize = 0;
-        while (instrument_index < instruments.len - 1) : (instrument_index += 1)
+        while (instrument_index < instrument_count) : (instrument_index += 1)
         {
             const info = instruments[instrument_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];

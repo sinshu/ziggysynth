@@ -19,13 +19,24 @@ pub fn main() !void
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
-
-    var i: usize = 0;
-    while (i < sf.sample_headers.len) : (i += 1)
+    try stdout.print("========== SAMPLE HEADERS ==========\n", .{});
     {
-        const name = sf.sample_headers[i].name;
-        try stdout.print("{s}\n", .{name});
+        var i: usize = 0;
+        while (i < sf.sample_headers.len) : (i += 1)
+        {
+            const name = sf.sample_headers[i].name;
+            try stdout.print("{s}\n", .{name});
+        }
+    }
+
+    try stdout.print("========== INSTRUMENTS ==========\n", .{});
+    {
+        var i: usize = 0;
+        while (i < sf.instruments.len) : (i += 1)
+        {
+            const name = sf.instruments[i].name;
+            try stdout.print("{s}\n", .{name});
+        }
     }
 
     try bw.flush(); // don't forget to flush!
