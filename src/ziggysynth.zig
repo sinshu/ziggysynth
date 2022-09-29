@@ -31,17 +31,17 @@ const SoundFontMath = struct
 
     fn centsToHertz(x: f32) f32
     {
-        return 8.176 * math.pow(2.0, (1.0 / 1200.0) * x);
+        return 8.176 * math.pow(f32, 2.0, (1.0 / 1200.0) * x);
     }
 
     fn centsToMultiplyingFactor(x: f32) f32
     {
-        return math.pow(2.0, (1.0 / 1200.0) * x);
+        return math.pow(f32, 2.0, (1.0 / 1200.0) * x);
     }
 
     fn decibelsToLinear(x: f32) f32
     {
-        return math.pow(10.0, 0.05 * x);
+        return math.pow(f32, 10.0, 0.05 * x);
     }
 
     fn linearToDecibels(x: f32) f32
@@ -561,12 +561,12 @@ const ZoneInfo = struct
     }
 };
 
-const Preset = struct
+pub const Preset = struct
 {
     const Self = @This();
 };
 
-const PresetRegion = struct
+pub const PresetRegion = struct
 {
     const Self = @This();
 };
@@ -639,7 +639,7 @@ const PresetInfo = struct
     }
 };
 
-const Instrument = struct
+pub const Instrument = struct
 {
     const Self = @This();
 
@@ -697,7 +697,7 @@ const Instrument = struct
     }
 };
 
-const InstrumentRegion = struct
+pub const InstrumentRegion = struct
 {
     const Self = @This();
 
@@ -851,6 +851,256 @@ const InstrumentRegion = struct
 
         return regions;
     }
+
+    pub fn getSampleStart(self: *const Self) i32
+    {
+        return self.sample.start + self.getStartAddressOffset();
+    }
+
+    pub fn getSampleEnd(self: *const Self) i32
+    {
+        return self.sample.end + self.getEndAddressOffset();
+    }
+
+    pub fn getSampleStartLoop(self: *const Self) i32
+    {
+        return self.sample.start_loop + self.getStartLoopAddressOffset();
+    }
+
+    pub fn getSampleEndLoop(self: *const Self) i32
+    {
+        return self.sample.end_loop + self.getEndLoopAddressOffset();
+    }
+
+    pub fn getStartAddressOffset(self: *const Self) i32
+    {
+        return 32768 * @intCast(i32, self.gs[GeneratorType.START_ADDRESS_COARSE_OFFSET]) + @intCast(i32, self.gs[GeneratorType.START_ADDRESS_OFFSET]);
+    }
+
+    pub fn getEndAddressOffset(self: *const Self) i32
+    {
+        return 32768 * @intCast(i32, self.gs[GeneratorType.END_ADDRESS_COARSE_OFFSET]) + @intCast(i32, self.gs[GeneratorType.END_ADDRESS_OFFSET]);
+    }
+
+    pub fn getStartLoopAddressOffset(self: *const Self) i32
+    {
+        return 32768 * @intCast(i32, self.gs[GeneratorType.START_LOOP_ADDRESS_COARSE_OFFSET]) + @intCast(i32, self.gs[GeneratorType.START_LOOP_ADDRESS_OFFSET]);
+    }
+
+    pub fn getEndLoopAddressOffset(self: *const Self) i32
+    {
+        return 32768 * @intCast(i32, self.gs[GeneratorType.END_LOOP_ADDRESS_COARSE_OFFSET]) + @intCast(i32, self.gs[GeneratorType.END_LOOP_ADDRESS_OFFSET]);
+    }
+
+    pub fn getModulationLfoToPitch(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.MODULATION_LFO_TO_PITCH]);
+    }
+
+    pub fn getVibratoLfoToPitch(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.VIBRATO_LFO_TO_PITCH]);
+    }
+
+    pub fn getModulationEnvelopeToPitch(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.MODULATION_ENVELOPE_TO_PITCH]);
+    }
+
+    pub fn getInitialFilterCutoffFrequency(self: *const Self) f32
+    {
+        return SoundFontMath.centsToHertz(@intToFloat(f32, self.gs[GeneratorType.INITIAL_FILTER_CUTOFF_FREQUENCY]));
+    }
+
+    pub fn getInitialFilterQ(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.INITIAL_FILTER_Q]);
+    }
+
+    pub fn getModulationLfoToFilterCutoffFrequency(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.MODULATION_LFO_TO_FILTER_CUTOFF_FREQUENCY]);
+    }
+
+    pub fn getModulationEnvelopeToFilterCutoffFrequency(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.MODULATION_ENVELOPE_TO_FILTER_CUTOFF_FREQUENCY]);
+    }
+
+    pub fn getModulationLfoToVolume(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.MODULATION_LFO_TO_VOLUME]);
+    }
+
+    pub fn getChorusEffectsSend(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.CHORUS_EFFECTS_SEND]);
+    }
+
+    pub fn getReverbEffectsSend(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.REVERB_EFFECTS_SEND]);
+    }
+
+    pub fn getPan(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.PAN]);
+    }
+
+    pub fn getDelayModulationLfo(self: *const Self) f32
+    {
+        return SoundFontMath.timecentsToSeconds(@intToFloat(f32, self.gs[GeneratorType.DELAY_MODULATION_LFO]));
+    }
+
+    pub fn getFrequencyModulationLfo(self: *const Self) f32
+    {
+        return SoundFontMath.centsToHertz(@intToFloat(f32, self.gs[GeneratorType.FREQUENCY_MODULATION_LFO]));
+    }
+
+    pub fn getDelayVibratoLfo(self: *const Self) f32
+    {
+        return SoundFontMath.timecentsToSeconds(@intToFloat(f32, self.gs[GeneratorType.DELAY_VIBRATO_LFO]));
+    }
+
+    pub fn getFrequencyVibratoLfo(self: *const Self) f32
+    {
+        return SoundFontMath.centsToHertz(@intToFloat(f32, self.gs[GeneratorType.FREQUENCY_VIBRATO_LFO]));
+    }
+
+    pub fn getDelayModulationEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.timecentsToSeconds(@intToFloat(f32, self.gs[GeneratorType.DELAY_MODULATION_ENVELOPE]));
+    }
+
+    pub fn getAttackModulationEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.timecentsToSeconds(@intToFloat(f32, self.gs[GeneratorType.ATTACK_MODULATION_ENVELOPE]));
+    }
+
+    pub fn getHoldModulationEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.timecentsToSeconds(@intToFloat(f32, self.gs[GeneratorType.HOLD_MODULATION_ENVELOPE]));
+    }
+
+    pub fn getDecayModulationEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.timecentsToSeconds(@intToFloat(f32, self.gs[GeneratorType.DECAY_MODULATION_ENVELOPE]));
+    }
+
+    pub fn getSustainModulationEnvelope(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.SUSTAIN_MODULATION_ENVELOPE]);
+    }
+
+    pub fn getReleaseModulationEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.timecentsToSeconds(@intToFloat(f32, self.gs[GeneratorType.RELEASE_MODULATION_ENVELOPE]));
+    }
+
+    pub fn getKeyNumberToModulationEnvelopeHold(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.KEY_NUMBER_TO_MODULATION_ENVELOPE_HOLD]);
+    }
+
+    pub fn getKeyNumberToModulationEnvelopeDecay(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.KEY_NUMBER_TO_MODULATION_ENVELOPE_DECAY]);
+    }
+
+    pub fn getDelayVolumeEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.timecentsToSeconds(@intToFloat(f32, self.gs[GeneratorType.DELAY_VOLUME_ENVELOPE]));
+    }
+
+    pub fn getAttackVolumeEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.timecentsToSeconds(@intToFloat(f32, self.gs[GeneratorType.ATTACK_VOLUME_ENVELOPE]));
+    }
+
+    pub fn getHoldVolumeEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.timecentsToSeconds(@intToFloat(f32, self.gs[GeneratorType.HOLD_VOLUME_ENVELOPE]));
+    }
+
+    pub fn getDecayVolumeEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.timecentsToSeconds(@intToFloat(f32, self.gs[GeneratorType.DECAY_VOLUME_ENVELOPE]));
+    }
+
+    pub fn getSustainVolumeEnvelope(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.SUSTAIN_VOLUME_ENVELOPE]);
+    }
+
+    pub fn getReleaseVolumeEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.timecentsToSeconds(@intToFloat(f32, self.gs[GeneratorType.RELEASE_VOLUME_ENVELOPE]));
+    }
+
+    pub fn getKeyNumberToVolumeEnvelopeHold(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.KEY_NUMBER_TO_VOLUME_ENVELOPE_HOLD]);
+    }
+
+    pub fn getKeyNumberToVolumeEnvelopeDecay(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.KEY_NUMBER_TO_VOLUME_ENVELOPE_DECAY]);
+    }
+
+    pub fn getKeyRangeStart(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.KEY_RANGE]) & 0xFF;
+    }
+
+    pub fn getKeyRangeEnd(self: *const Self) i32
+    {
+        return (@intCast(i32, self.gs[GeneratorType.KEY_RANGE]) >> 8) & 0xFF;
+    }
+
+    pub fn getVelocityRangeStart(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.VELOCITY_RANGE]) & 0xFF;
+    }
+
+    pub fn getVelocityRangeEnd(self: *const Self) i32
+    {
+        return (@intCast(i32, self.gs[GeneratorType.VELOCITY_RANGE]) >> 8) & 0xFF;
+    }
+
+    pub fn getInitialAttenuation(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.INITIAL_ATTENUATION]);
+    }
+
+    pub fn getCoarseTune(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.COARSE_TUNE]);
+    }
+
+    pub fn getFineTune(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.FINE_TUNE]) + self.sample.pitch_correction;
+    }
+
+    pub fn getSampleModes(self: *const Self) i32
+    {
+        return if (self.gs[GeneratorType.SAMPLE_MODES] != 2) self.gs[GeneratorType.SAMPLE_MODES] else LoopMode.NO_LOOP;
+    }
+
+    pub fn getScaleTuning(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.SCALE_TUNING]);
+    }
+
+    pub fn getExclusiveClass(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.EXCLUSIVE_CLASS]);
+    }
+
+    pub fn getRootKey(self: *const Self) i32
+    {
+        return if (self.gs[GeneratorType.OVERRIDING_ROOT_KEY] != -1) self.gs[GeneratorType.OVERRIDING_ROOT_KEY] else self.sample.original_pitch;
+    }
 };
 
 const InstrumentInfo = struct
@@ -972,4 +1222,11 @@ pub const SampleHeader = struct
 
         return headers;
     }
+};
+
+const LoopMode = struct
+{
+    const NO_LOOP: i32 = 0;
+    const CONTINUOUS: i32 = 0;
+    const LOOP_UNTIL_NOTE_OFF: i32 = 0;
 };
