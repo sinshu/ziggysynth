@@ -289,11 +289,11 @@ const SoundFontParameters = struct
 
             if (mem.eql(u8, &id, "phdr"))
             {
-                preset_infos = try PresetInfo.read_from_chunk(allocator, reader, size);
+                preset_infos = try PresetInfo.readFromChunk(allocator, reader, size);
             }
             else if (mem.eql(u8, &id, "pbag"))
             {
-                preset_bag = try ZoneInfo.read_from_chunk(allocator, reader, size);
+                preset_bag = try ZoneInfo.readFromChunk(allocator, reader, size);
             }
             else if (mem.eql(u8, &id, "pmod"))
             {
@@ -301,15 +301,15 @@ const SoundFontParameters = struct
             }
             else if (mem.eql(u8, &id, "pgen"))
             {
-                preset_generators = try Generator.read_from_chunk(allocator, reader, size);
+                preset_generators = try Generator.readFromChunk(allocator, reader, size);
             }
             else if (mem.eql(u8, &id, "inst"))
             {
-                instrument_infos = try InstrumentInfo.read_from_chunk(allocator, reader, size);
+                instrument_infos = try InstrumentInfo.readFromChunk(allocator, reader, size);
             }
             else if (mem.eql(u8, &id, "ibag"))
             {
-                instrument_bag = try ZoneInfo.read_from_chunk(allocator, reader, size);
+                instrument_bag = try ZoneInfo.readFromChunk(allocator, reader, size);
             }
             else if (mem.eql(u8, &id, "imod"))
             {
@@ -317,11 +317,11 @@ const SoundFontParameters = struct
             }
             else if (mem.eql(u8, &id, "igen"))
             {
-                instrument_generators = try Generator.read_from_chunk(allocator, reader, size);
+                instrument_generators = try Generator.readFromChunk(allocator, reader, size);
             }
             else if (mem.eql(u8, &id, "shdr"))
             {
-                sample_headers = try SampleHeader.read_from_chunk(allocator, reader, size);
+                sample_headers = try SampleHeader.readFromChunk(allocator, reader, size);
             }
             else
             {
@@ -387,7 +387,7 @@ const Generator = struct
         };
     }
 
-    fn read_from_chunk(allocator: Allocator, reader: anytype, size: usize) ![]Self
+    fn readFromChunk(allocator: Allocator, reader: anytype, size: usize) ![]Self
     {
         if (size % 4 != 0)
         {
@@ -553,7 +553,7 @@ const ZoneInfo = struct
         };
     }
 
-    fn read_from_chunk(allocator: Allocator, reader: anytype, size: usize) ![]Self
+    fn readFromChunk(allocator: Allocator, reader: anytype, size: usize) ![]Self
     {
         if (size % 4 != 0)
         {
@@ -619,7 +619,7 @@ pub const Preset = struct
 
             var region_count: usize = undefined;
             // Is the first one the global zone?
-            if (PresetRegion.contains_global_zone(zones))
+            if (PresetRegion.containsGlobalZone(zones))
             {
                 // The first one is the global zone.
                 region_count = zones.len - 1;
@@ -651,7 +651,7 @@ pub const PresetRegion = struct
     instrument: *Instrument,
     gs: [GeneratorType.COUNT]i16,
 
-    fn contains_global_zone(zones: []Zone) bool
+    fn containsGlobalZone(zones: []Zone) bool
     {
         if (zones[0].generators.len == 0)
         {
@@ -666,7 +666,7 @@ pub const PresetRegion = struct
         return false;
     }
 
-    fn count_regions(infos: []PresetInfo, all_zones: []Zone) usize
+    fn countRegions(infos: []PresetInfo, all_zones: []Zone) usize
     {
         // The last one is the terminator.
         const preset_count = infos.len - 1;
@@ -680,7 +680,7 @@ pub const PresetRegion = struct
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
             // Is the first one the global zone?
-            if (PresetRegion.contains_global_zone(zones))
+            if (PresetRegion.containsGlobalZone(zones))
             {
                 // The first one is the global zone.
                 sum += zones.len - 1;
@@ -695,7 +695,7 @@ pub const PresetRegion = struct
         return sum;
     }
 
-    fn set_parameter(gs: *[GeneratorType.COUNT]i16, generator: *const Generator) void
+    fn setParameter(gs: *[GeneratorType.COUNT]i16, generator: *const Generator) void
     {
         const index = generator.generator_type;
 
@@ -714,12 +714,12 @@ pub const PresetRegion = struct
 
         for (global.generators) |value|
         {
-            set_parameter(&gs, &value);
+            setParameter(&gs, &value);
         }
 
         for (local.generators) |value|
         {
-            set_parameter(&gs, &value);
+            setParameter(&gs, &value);
         }
 
         const id = @intCast(usize, gs[GeneratorType.INSTRUMENT]);
@@ -741,7 +741,7 @@ pub const PresetRegion = struct
         // The last one is the terminator.
         const preset_count = infos.len - 1;
 
-        var regions = try allocator.alloc(Self, PresetRegion.count_regions(infos, all_zones));
+        var regions = try allocator.alloc(Self, PresetRegion.countRegions(infos, all_zones));
         errdefer allocator.free(regions);
         var region_index: usize = 0;
 
@@ -752,7 +752,7 @@ pub const PresetRegion = struct
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
             // Is the first one the global zone?
-            if (PresetRegion.contains_global_zone(zones))
+            if (PresetRegion.containsGlobalZone(zones))
             {
                 // The first one is the global zone.
                 var i: usize = 0;
@@ -1014,7 +1014,7 @@ const PresetInfo = struct
         };
     }
 
-    fn read_from_chunk(allocator: Allocator, reader: anytype, size: usize) ![]Self
+    fn readFromChunk(allocator: Allocator, reader: anytype, size: usize) ![]Self
     {
         if (size % 38 != 0)
         {
@@ -1084,7 +1084,7 @@ pub const Instrument = struct
 
             var region_count: usize = undefined;
             // Is the first one the global zone?
-            if (InstrumentRegion.contains_global_zone(zones))
+            if (InstrumentRegion.containsGlobalZone(zones))
             {
                 // The first one is the global zone.
                 region_count = zones.len - 1;
@@ -1116,7 +1116,7 @@ pub const InstrumentRegion = struct
     sample: *SampleHeader,
     gs: [GeneratorType.COUNT]i16,
 
-    fn contains_global_zone(zones: []Zone) bool
+    fn containsGlobalZone(zones: []Zone) bool
     {
         if (zones[0].generators.len == 0)
         {
@@ -1131,7 +1131,7 @@ pub const InstrumentRegion = struct
         return false;
     }
 
-    fn count_regions(infos: []InstrumentInfo, all_zones: []Zone) usize
+    fn countRegions(infos: []InstrumentInfo, all_zones: []Zone) usize
     {
         // The last one is the terminator.
         const instrument_count = infos.len - 1;
@@ -1145,7 +1145,7 @@ pub const InstrumentRegion = struct
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
             // Is the first one the global zone?
-            if (InstrumentRegion.contains_global_zone(zones))
+            if (InstrumentRegion.containsGlobalZone(zones))
             {
                 // The first one is the global zone.
                 sum += zones.len - 1;
@@ -1160,7 +1160,7 @@ pub const InstrumentRegion = struct
         return sum;
     }
 
-    fn set_parameter(gs: *[GeneratorType.COUNT]i16, generator: *const Generator) void
+    fn setParameter(gs: *[GeneratorType.COUNT]i16, generator: *const Generator) void
     {
         const index = generator.generator_type;
 
@@ -1196,12 +1196,12 @@ pub const InstrumentRegion = struct
 
         for (global.generators) |value|
         {
-            set_parameter(&gs, &value);
+            setParameter(&gs, &value);
         }
 
         for (local.generators) |value|
         {
-            set_parameter(&gs, &value);
+            setParameter(&gs, &value);
         }
 
         const id = @intCast(usize, gs[GeneratorType.SAMPLE_ID]);
@@ -1223,7 +1223,7 @@ pub const InstrumentRegion = struct
         // The last one is the terminator.
         const instrument_count = infos.len - 1;
 
-        var regions = try allocator.alloc(Self, InstrumentRegion.count_regions(infos, all_zones));
+        var regions = try allocator.alloc(Self, InstrumentRegion.countRegions(infos, all_zones));
         errdefer allocator.free(regions);
         var region_index: usize = 0;
 
@@ -1234,7 +1234,7 @@ pub const InstrumentRegion = struct
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
             // Is the first one the global zone?
-            if (InstrumentRegion.contains_global_zone(zones))
+            if (InstrumentRegion.containsGlobalZone(zones))
             {
                 // The first one is the global zone.
                 var i: usize = 0;
@@ -1536,7 +1536,7 @@ const InstrumentInfo = struct
         };
     }
 
-    fn read_from_chunk(allocator: Allocator, reader: anytype, size: usize) ![]Self
+    fn readFromChunk(allocator: Allocator, reader: anytype, size: usize) ![]Self
     {
         if (size % 22 != 0)
         {
@@ -1616,7 +1616,7 @@ pub const SampleHeader = struct
         };
     }
 
-    fn read_from_chunk(allocator: Allocator, reader: anytype, size: usize) ![]Self
+    fn readFromChunk(allocator: Allocator, reader: anytype, size: usize) ![]Self
     {
         if (size % 46 != 0)
         {
