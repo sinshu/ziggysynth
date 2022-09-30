@@ -5,7 +5,7 @@ const Allocator = mem.Allocator;
 
 const ZiggySynthError = error {
     InvalidSoundFont,
-    Unknown,
+    Unexpected,
 };
 
 const BinaryReader = struct
@@ -637,7 +637,7 @@ pub const Preset = struct
 
         if (region_index != all_regions.len)
         {
-            return ZiggySynthError.Unknown;
+            return ZiggySynthError.Unexpected;
         }
 
         return presets;
@@ -776,13 +776,13 @@ pub const PresetRegion = struct
 
         if (region_index != regions.len)
         {
-            return ZiggySynthError.Unknown;
+            return ZiggySynthError.Unexpected;
         }
 
         return regions;
     }
 
-        pub fn getModulationLfoToPitch(self: *const Self) i32
+    pub fn getModulationLfoToPitch(self: *const Self) i32
     {
         return @intCast(i32, self.gs[GeneratorType.MODULATION_LFO_TO_PITCH]);
     }
@@ -1023,6 +1023,11 @@ const PresetInfo = struct
 
         const count = size / 38;
 
+        if (count <= 1)
+        {
+            return ZiggySynthError.InvalidSoundFont;
+        }
+
         var presets = try allocator.alloc(Self, count);
         errdefer allocator.free(presets);
 
@@ -1097,7 +1102,7 @@ pub const Instrument = struct
 
         if (region_index != all_regions.len)
         {
-            return ZiggySynthError.Unknown;
+            return ZiggySynthError.Unexpected;
         }
 
         return instruments;
@@ -1253,7 +1258,7 @@ pub const InstrumentRegion = struct
 
         if (region_index != regions.len)
         {
-            return ZiggySynthError.Unknown;
+            return ZiggySynthError.Unexpected;
         }
 
         return regions;
@@ -1540,6 +1545,11 @@ const InstrumentInfo = struct
 
         const count = size / 22;
 
+        if (count <= 1)
+        {
+            return ZiggySynthError.InvalidSoundFont;
+        }
+
         var instruments = try allocator.alloc(Self, count);
         errdefer allocator.free(instruments);
 
@@ -1614,6 +1624,11 @@ pub const SampleHeader = struct
         }
 
         const count = size / 46 - 1;
+
+        if (count <= 1)
+        {
+            return ZiggySynthError.InvalidSoundFont;
+        }
 
         var headers = try allocator.alloc(Self, count);
         errdefer allocator.free(headers);
