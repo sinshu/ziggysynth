@@ -39,11 +39,5 @@ pub fn main() !void
         }
     }
 
-    const g: f64 = 2.1;
-    const h: f64 = 3.2;
-    const j: f32 = g + h;
-    
-    try stdout.print("ANS: {}\n", .{j});
-
     try bw.flush(); // don't forget to flush!
 }

@@ -1991,6 +1991,16 @@ const RegionEx = struct
 
          envelope.start(delay, attack, hold, decay, sustain, release);
     }
+
+    fn start_vibrato(lfo: *Lfo, region: *RegionPair) void
+    {
+        lfo.start(region.getDelayVibratoLfo(), region.getFrequencyVibratoLfo());
+    }
+
+    fn start_modulation(lfo: *Lfo, region: *RegionPair) void
+    {
+        lfo.start(region.getDelayModulationLfo(), region.getFrequencyModulationLfo());
+    }
 };
 
 
@@ -2320,6 +2330,86 @@ const EnvelopeStage = struct
 const Lfo = struct
 {
     const Self = @This();
+
+    synthesizer: *Synthesizer,
+
+    active: bool,
+
+    delay: f64,
+    period: f64,
+
+    processed_sample_count: i32,
+    value: f32,
+
+    fn init(synthesizer: *Synthesizer) Self
+    {
+        return Self
+        {
+            .synthesizer = synthesizer,
+            .active = false,
+            .delay = 0.0,
+            .period = 0.0,
+            .processed_sample_count = 0,
+            .value = 0.0,
+        };
+    }
+
+    fn start(self: *Self, delay: f32, frequency: f32) void
+    {
+        if (frequency > 1.0E-3)
+        {
+            self.active = true;
+
+            self.delay = delay;
+            self.period = 1.0 / frequency;
+
+            self.processed_sample_count = 0;
+            self.value = 0.0;
+        }
+        else
+        {
+            self.active = false;
+            self.value = 0.0;
+        }
+    }
+
+    fn process(self: *Self) void
+    {
+        if (!self.active)
+        {
+            return;
+        }
+
+        self.processed_sample_count += self.synthesizer.block_size;
+
+        const current_time = @intToFloat(f64, self.processed_sample_count) / @intToFloat(f64, self.sample_rate);
+
+        if (current_time < self.delay)
+        {
+            self.value = 0.0;
+        }
+        else
+        {
+            const phase = ((current_time - self.delay) % self.period) / self.period;
+            if (phase < 0.25)
+            {
+                self.value = (4.0 * phase);
+            }
+            else if (phase < 0.75)
+            {
+                self.value = (4.0 * (0.5 - phase));
+            }
+            else
+            {
+                self.value = (4.0 * (phase - 1.0));
+            }
+        }
+    }
+
+    fn get_value(self: *Self) f32
+    {
+        return self.value;
+    }
 };
 
 
