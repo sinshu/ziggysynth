@@ -74,6 +74,8 @@ pub const SoundFont = struct
     allocator: Allocator,
     wave_data: []i16,
     sample_headers: []SampleHeader,
+    presets: []Preset,
+    preset_regions: []PresetRegion,
     instruments: []Instrument,
     instrument_regions: []InstrumentRegion,
 
@@ -81,6 +83,8 @@ pub const SoundFont = struct
     {
         var wave_data: ?[]i16 = null;
         var sample_headers: ?[]SampleHeader = null;
+        var presets: ?[]Preset = null;
+        var preset_regions: ?[]PresetRegion = null;
         var instruments: ?[]Instrument = null;
         var instrument_regions: ?[]InstrumentRegion = null;
 
@@ -88,6 +92,8 @@ pub const SoundFont = struct
         {
             if (wave_data) |value| allocator.free(value);
             if (sample_headers) |value| allocator.free(value);
+            if (presets) |value| allocator.free(value);
+            if (preset_regions) |value| allocator.free(value);
             if (instruments) |value| allocator.free(value);
             if (instrument_regions) |value| allocator.free(value);
         }
@@ -113,6 +119,8 @@ pub const SoundFont = struct
 
         const parameters = try SoundFontParameters.init(allocator, reader);
         sample_headers = parameters.sample_headers;
+        presets = parameters.presets;
+        preset_regions = parameters.preset_regions;
         instruments = parameters.instruments;
         instrument_regions = parameters.instrument_regions;
 
@@ -121,6 +129,8 @@ pub const SoundFont = struct
             .allocator = allocator,
             .wave_data = wave_data.?,
             .sample_headers = sample_headers.?,
+            .presets = presets.?,
+            .preset_regions = preset_regions.?,
             .instruments = instruments.?,
             .instrument_regions = instrument_regions.?,
         };
@@ -130,6 +140,8 @@ pub const SoundFont = struct
     {
         self.allocator.free(self.wave_data);
         self.allocator.free(self.sample_headers);
+        self.allocator.free(self.presets);
+        self.allocator.free(self.preset_regions);
         self.allocator.free(self.instruments);
         self.allocator.free(self.instrument_regions);
     }
@@ -220,6 +232,8 @@ const SoundFontParameters = struct
     const Self = @This();
 
     sample_headers: []SampleHeader,
+    presets: []Preset,
+    preset_regions: []PresetRegion,
     instruments: []Instrument,
     instrument_regions: []InstrumentRegion,
 
@@ -334,9 +348,20 @@ const SoundFontParameters = struct
         const instruments = try Instrument.create(allocator, instrument_infos.?, instrument_zones, instrument_regions);
         errdefer allocator.free(instruments);
 
+        const preset_zones = try Zone.create(allocator, preset_bag.?, preset_generators.?);
+        defer allocator.free(preset_zones);
+
+        const preset_regions = try PresetRegion.create(allocator, preset_infos.?, preset_zones, instruments);
+        errdefer allocator.free(preset_regions);
+
+        const presets = try Preset.create(allocator, preset_infos.?, preset_zones, preset_regions);
+        errdefer allocator.free(presets);
+
         return Self
         {
             .sample_headers = sample_headers.?,
+            .presets = presets,
+            .preset_regions = preset_regions,
             .instruments = instruments,
             .instrument_regions = instrument_regions,
         };
@@ -564,11 +589,393 @@ const ZoneInfo = struct
 pub const Preset = struct
 {
     const Self = @This();
+
+    name: [20]u8,
+    regions: []PresetRegion,
+
+    fn init(name: [20]u8, regions: []PresetRegion) Self
+    {
+        return Self
+        {
+            .name = name,
+            .regions = regions,
+        };
+    }
+
+    fn create(allocator: Allocator, infos: []PresetInfo, all_zones: []Zone, all_regions: []PresetRegion) ![]Self
+    {
+        // The last one is the terminator.
+        const preset_count = infos.len - 1;
+
+        var presets = try allocator.alloc(Self, preset_count);
+        errdefer allocator.free(presets);
+
+        var preset_index: usize = 0;
+        var region_index: usize = 0;
+        while (preset_index < preset_count) : (preset_index += 1)
+        {
+            const info = infos[preset_index];
+            const zones = all_zones[info.zone_start_index..info.zone_end_index];
+
+            var region_count: usize = undefined;
+            // Is the first one the global zone?
+            if (PresetRegion.contains_global_zone(zones))
+            {
+                // The first one is the global zone.
+                region_count = zones.len - 1;
+            }
+            else
+            {
+                // No global zone.
+                region_count = zones.len;
+            }
+
+            const region_end = region_index + region_count;
+            presets[preset_index] = Preset.init(info.name, all_regions[region_index..region_end]);
+            region_index += region_count;
+        }
+
+        if (region_index != all_regions.len)
+        {
+            return ZiggySynthError.Unknown;
+        }
+
+        return presets;
+    }
 };
 
 pub const PresetRegion = struct
 {
     const Self = @This();
+
+    instrument: *Instrument,
+    gs: [GeneratorType.COUNT]i16,
+
+    fn contains_global_zone(zones: []Zone) bool
+    {
+        if (zones[0].generators.len == 0)
+        {
+            return true;
+        }
+
+        if (zones[0].generators[zones[0].generators.len - 1].generator_type != GeneratorType.INSTRUMENT)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    fn count_regions(infos: []PresetInfo, all_zones: []Zone) usize
+    {
+        // The last one is the terminator.
+        const preset_count = infos.len - 1;
+
+        var sum: usize = 0;
+
+        var preset_index: usize = 0;
+        while (preset_index < preset_count) : (preset_index += 1)
+        {
+            const info = infos[preset_index];
+            const zones = all_zones[info.zone_start_index..info.zone_end_index];
+
+            // Is the first one the global zone?
+            if (PresetRegion.contains_global_zone(zones))
+            {
+                // The first one is the global zone.
+                sum += zones.len - 1;
+            }
+            else
+            {
+                // No global zone.
+                sum += zones.len;
+            }
+        }
+
+        return sum;
+    }
+
+    fn set_parameter(gs: *[GeneratorType.COUNT]i16, generator: *const Generator) void
+    {
+        const index = generator.generator_type;
+
+        // Unknown generators should be ignored.
+        if (index < gs.len)
+        {
+            gs[index] = generator.value;
+        }
+    }
+
+    fn init(global: *const Zone, local: *const Zone, instruments: []Instrument) !Self
+    {
+        var gs = mem.zeroes([GeneratorType.COUNT]i16);
+        gs[GeneratorType.KEY_RANGE] = 0x7F00;
+        gs[GeneratorType.VELOCITY_RANGE] = 0x7F00;
+
+        for (global.generators) |value|
+        {
+            set_parameter(&gs, &value);
+        }
+
+        for (local.generators) |value|
+        {
+            set_parameter(&gs, &value);
+        }
+
+        const id = @intCast(usize, gs[GeneratorType.INSTRUMENT]);
+        if (id >= instruments.len)
+        {
+            return ZiggySynthError.InvalidSoundFont;
+        }
+        const instrument = &instruments[id];
+
+        return Self
+        {
+            .instrument = instrument,
+            .gs = gs,
+        };
+    }
+
+    fn create(allocator: Allocator, infos: []PresetInfo, all_zones: []Zone, instruments: []Instrument) ![]Self
+    {
+        // The last one is the terminator.
+        const preset_count = infos.len - 1;
+
+        var regions = try allocator.alloc(Self, PresetRegion.count_regions(infos, all_zones));
+        errdefer allocator.free(regions);
+        var region_index: usize = 0;
+
+        var preset_index: usize = 0;
+        while (preset_index < preset_count) : (preset_index += 1)
+        {
+            const info = infos[preset_index];
+            const zones = all_zones[info.zone_start_index..info.zone_end_index];
+
+            // Is the first one the global zone?
+            if (PresetRegion.contains_global_zone(zones))
+            {
+                // The first one is the global zone.
+                var i: usize = 0;
+                while (i < zones.len - 1) : (i += 1)
+                {
+                    regions[region_index] = try PresetRegion.init(&zones[0], &zones[i + 1], instruments);
+                    region_index += 1;
+                }
+            }
+            else
+            {
+                // No global zone.
+                var i: usize = 0;
+                while (i < zones.len) : (i += 1)
+                {
+                    regions[region_index] = try PresetRegion.init(&Zone.empty(), &zones[i], instruments);
+                    region_index += 1;
+                }
+            }
+        }
+
+        if (region_index != regions.len)
+        {
+            return ZiggySynthError.Unknown;
+        }
+
+        return regions;
+    }
+
+        pub fn getModulationLfoToPitch(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.MODULATION_LFO_TO_PITCH]);
+    }
+
+    pub fn getVibratoLfoToPitch(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.VIBRATO_LFO_TO_PITCH]);
+    }
+
+    pub fn getModulationEnvelopeToPitch(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.MODULATION_ENVELOPE_TO_PITCH]);
+    }
+
+    pub fn getInitialFilterCutoffFrequency(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.INITIAL_FILTER_CUTOFF_FREQUENCY]));
+    }
+
+    pub fn getInitialFilterQ(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.INITIAL_FILTER_Q]);
+    }
+
+    pub fn getModulationLfoToFilterCutoffFrequency(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.MODULATION_LFO_TO_FILTER_CUTOFF_FREQUENCY]);
+    }
+
+    pub fn getModulationEnvelopeToFilterCutoffFrequency(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.MODULATION_ENVELOPE_TO_FILTER_CUTOFF_FREQUENCY]);
+    }
+
+    pub fn getModulationLfoToVolume(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.MODULATION_LFO_TO_VOLUME]);
+    }
+
+    pub fn getChorusEffectsSend(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.CHORUS_EFFECTS_SEND]);
+    }
+
+    pub fn getReverbEffectsSend(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.REVERB_EFFECTS_SEND]);
+    }
+
+    pub fn getPan(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.PAN]);
+    }
+
+    pub fn getDelayModulationLfo(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.DELAY_MODULATION_LFO]));
+    }
+
+    pub fn getFrequencyModulationLfo(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.FREQUENCY_MODULATION_LFO]));
+    }
+
+    pub fn getDelayVibratoLfo(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.DELAY_VIBRATO_LFO]));
+    }
+
+    pub fn getFrequencyVibratoLfo(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.FREQUENCY_VIBRATO_LFO]));
+    }
+
+    pub fn getDelayModulationEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.DELAY_MODULATION_ENVELOPE]));
+    }
+
+    pub fn getAttackModulationEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.ATTACK_MODULATION_ENVELOPE]));
+    }
+
+    pub fn getHoldModulationEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.HOLD_MODULATION_ENVELOPE]));
+    }
+
+    pub fn getDecayModulationEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.DECAY_MODULATION_ENVELOPE]));
+    }
+
+    pub fn getSustainModulationEnvelope(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.SUSTAIN_MODULATION_ENVELOPE]);
+    }
+
+    pub fn getReleaseModulationEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.RELEASE_MODULATION_ENVELOPE]));
+    }
+
+    pub fn getKeyNumberToModulationEnvelopeHold(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.KEY_NUMBER_TO_MODULATION_ENVELOPE_HOLD]);
+    }
+
+    pub fn getKeyNumberToModulationEnvelopeDecay(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.KEY_NUMBER_TO_MODULATION_ENVELOPE_DECAY]);
+    }
+
+    pub fn getDelayVolumeEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.DELAY_VOLUME_ENVELOPE]));
+    }
+
+    pub fn getAttackVolumeEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.ATTACK_VOLUME_ENVELOPE]));
+    }
+
+    pub fn getHoldVolumeEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.HOLD_VOLUME_ENVELOPE]));
+    }
+
+    pub fn getDecayVolumeEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.DECAY_VOLUME_ENVELOPE]));
+    }
+
+    pub fn getSustainVolumeEnvelope(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.SUSTAIN_VOLUME_ENVELOPE]);
+    }
+
+    pub fn getReleaseVolumeEnvelope(self: *const Self) f32
+    {
+        return SoundFontMath.centsToMultiplyingFactor(@intToFloat(f32, self.gs[GeneratorType.RELEASE_VOLUME_ENVELOPE]));
+    }
+
+    pub fn getKeyNumberToVolumeEnvelopeHold(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.KEY_NUMBER_TO_VOLUME_ENVELOPE_HOLD]);
+    }
+
+    pub fn getKeyNumberToVolumeEnvelopeDecay(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.KEY_NUMBER_TO_VOLUME_ENVELOPE_DECAY]);
+    }
+
+    pub fn getKeyRangeStart(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.KEY_RANGE]) & 0xFF;
+    }
+
+    pub fn getKeyRangeEnd(self: *const Self) i32
+    {
+        return (@intCast(i32, self.gs[GeneratorType.KEY_RANGE]) >> 8) & 0xFF;
+    }
+
+    pub fn getVelocityRangeStart(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.VELOCITY_RANGE]) & 0xFF;
+    }
+
+    pub fn getVelocityRangeEnd(self: *const Self) i32
+    {
+        return (@intCast(i32, self.gs[GeneratorType.VELOCITY_RANGE]) >> 8) & 0xFF;
+    }
+
+    pub fn getInitialAttenuation(self: *const Self) f32
+    {
+        return 0.1 * @intToFloat(f32, self.gs[GeneratorType.INITIAL_ATTENUATION]);
+    }
+
+    pub fn getCoarseTune(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.COARSE_TUNE]);
+    }
+
+    pub fn getFineTune(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.FINE_TUNE]);
+    }
+
+    pub fn getScaleTuning(self: *const Self) i32
+    {
+        return @intCast(i32, self.gs[GeneratorType.SCALE_TUNING]);
+    }
 };
 
 const PresetInfo = struct
@@ -631,7 +1038,7 @@ const PresetInfo = struct
             var i: usize = 0;
             while (i < count - 1) : (i += 1)
             {
-                presets[i].zone_end_index = presets[i + 1].zone_start_index - 1;
+                presets[i].zone_end_index = presets[i + 1].zone_start_index;
             }
         }
 

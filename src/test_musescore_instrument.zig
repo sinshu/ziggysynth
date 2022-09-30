@@ -1,6 +1,7 @@
 const std = @import("std");
 const debug = std.debug;
 const ziggysynth = @import("ziggysynth.zig");
+const SoundFont = ziggysynth.SoundFont;
 const InstrumentRegion = ziggysynth.InstrumentRegion;
 
 fn areEqual(x: f64, y: f64) bool
@@ -80,7 +81,7 @@ test "MuseScore Instrument"
     var file = try std.fs.cwd().openFile("GeneralUser GS MuseScore v1.442.sf2", .{});
     defer file.close();
 
-    var sf = try ziggysynth.SoundFont.init(allocator, file.reader());
+    var sf = try SoundFont.init(allocator, file.reader());
     defer sf.deinit();
 
     // ============================================================
