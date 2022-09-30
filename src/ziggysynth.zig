@@ -136,7 +136,7 @@ pub const SoundFont = struct
         };
     }
 
-    pub fn deinit(self: Self) void
+    pub fn deinit(self: *Self) void
     {
         self.allocator.free(self.wave_data);
         self.allocator.free(self.sample_headers);
