@@ -30,6 +30,22 @@ const SoundFontMath = struct
     const NON_AUDIBLE: f32 = 1.0E-3;
     const LOG_NON_AUDIBLE: f32 = @log(1.0E-3);
 
+    fn clamp(value: f32, min: f32, max: f32) f32
+    {
+        if (value < min)
+        {
+            return min;
+        }
+        else if (value > max)
+        {
+            return max;
+        }
+        else
+        {
+            return value;
+        }
+    }
+
     fn timecentsToSeconds(x: f32) f32
     {
         return math.pow(f32, 2.0, (1.0 / 1200.0) * x);
@@ -1948,6 +1964,33 @@ const RegionPair = struct
 
 const RegionEx = struct
 {
+    fn start_volume_envelope(envelope: *VolumeEnvelope, region: *RegionPair, key: i32) void
+    {
+        // If the release time is shorter than 10 ms, it will be clamped to 10 ms to avoid pop noise.
+
+        const delay = region.getDelayVolumeEnvelope();
+        const attack = region.getAttackVolumeEnvelope();
+        const hold = region.getHoldVolumeEnvelope() * SoundFontMath.keyNumberToMultiplyingFactor(region.getKeyNumberToVolumeEnvelopeHold(), key);
+        const decay = region.getDecayVolumeEnvelope() * SoundFontMath.keyNumberToMultiplyingFactor(region.getKeyNumberToVolumeEnvelopeDecay(), key);
+        const sustain = SoundFontMath.decibelsToLinear(-region.getSustainVolumeEnvelope());
+        const release = @maximum(region.getReleaseVolumeEnvelope(), 0.01);
+
+        envelope.start(delay, attack, hold, decay, sustain, release);
+    }
+
+    fn start_modulation_envelope(envelope: *ModulationEnvelope, region: *RegionPair, key: i32, velocity: i32) void
+    {
+         // According to the implementation of TinySoundFont, the attack time should be adjusted by the velocity.
+
+         const delay = region.getDelayModulationEnvelope();
+         const attack = region.getAttackModulationEnvelope() * (@intToFloat(f32, 145 - velocity) / 144.0);
+         const hold = region.getHoldModulationEnvelope() * SoundFontMath.keyNumberToMultiplyingFactor(region.getKeyNumberToModulationEnvelopeHold(), key);
+         const decay = region.getDecayModulationEnvelope() * SoundFontMath.keyNumberToMultiplyingFactor(region.getKeyNumberToModulationEnvelopeDecay(), key);
+         const sustain = 1.0 - region.getSustainModulationEnvelope() / 100.0;
+         const release = region.getReleaseModulationEnvelope();
+
+         envelope.start(delay, attack, hold, decay, sustain, release);
+    }
 };
 
 
@@ -1983,6 +2026,142 @@ const BiQuadFilter = struct
 const VolumeEnvelope = struct
 {
     const Self = @This();
+
+    synthesizer: *Synthesizer,
+
+    attack_slope: f64,
+    decay_slope: f64,
+    release_slope: f64,
+
+    attack_start_time: f64,
+    hold_start_time: f64,
+    decay_start_time: f64,
+    release_start_time: f64,
+
+    sustain_level: f32,
+    release_level: f32,
+
+    processed_sample_count: i32,
+    stage: i32,
+    value: f32,
+
+    priority: f32,
+
+    fn init(synthesizer: *Synthesizer) Self
+    {
+        return Self
+        {
+            .synthesizer = synthesizer,
+            .attack_slope = 0.0,
+            .decay_slope = 0.0,
+            .release_slope = 0.0,
+            .attack_start_time = 0.0,
+            .hold_start_time = 0.0,
+            .decay_start_time = 0.0,
+            .release_start_time = 0.0,
+            .sustain_level = 0.0,
+            .release_level = 0.0,
+            .processed_sample_count = 0,
+            .stage = 0,
+            .value = 0.0,
+            .priority = 0.0,
+        };
+    }
+
+    fn start(self: *Self, delay: f32, attack: f32, hold: f32, decay: f32, sustain: f32, release: f32) void
+    {
+        self.attack_slope = 1.0 / attack;
+        self.decay_slope = -9.226 / decay;
+        self.release_slope = -9.226 / release;
+
+        self.attack_start_time = delay;
+        self.hold_start_time = self.attack_start_time + attack;
+        self.decay_start_time = self.hold_start_time + hold;
+        self.release_start_time = 0.0;
+
+        self.sustain_level = SoundFontMath.clamp(sustain, 0.0, 1.0);
+        self.release_level = 0.0;
+
+        self.processed_sample_count = 0;
+        self.stage = EnvelopeStage.DELAY;
+        self.value = 0.0;
+
+        self.process(0);
+    }
+
+    fn release_voice(self: *Self) void
+    {
+        self.stage = EnvelopeStage.RELEASE;
+        self.release_start_time = @intToFloat(f64, self.processed_sample_count) / @intToFloat(f64, self.synthesizer.sample_rate);
+        self.release_level = self.value;
+    }
+
+    fn process(self: *Self, sample_count: i32) bool
+    {
+        self.processed_sample_count += sample_count;
+
+        const current_time = @intToFloat(f64, self.processed_sample_count) / @intToFloat(f64, self.synthesizer.sample_rate);
+
+        while (self.stage <= EnvelopeStage.HOLD)
+        {
+            const end_time = switch (self.stage)
+            {
+                EnvelopeStage.DELAY => self.attack_start_time,
+                EnvelopeStage.ATTACK => self.hold_start_time,
+                EnvelopeStage.HOLD => self.decay_start_time,
+                else => unreachable,
+            };
+
+            if (current_time < end_time)
+            {
+                break;
+            }
+            else
+            {
+                self.stage += 1;
+            }
+        }
+
+        if (self.stage == EnvelopeStage.DELAY)
+        {
+            self.value = 0.0;
+            self.priority = 4.0 + self.value;
+            return true;
+        }
+        else if (self.stage == EnvelopeStage.ATTACK)
+        {
+            self.value = self.attack_slope * (current_time - self.attack_start_time);
+            self.priority = 3.0 + self.value;
+            return true;
+        }
+        else if (self.stage == EnvelopeStage.HOLD)
+        {
+            self.value = 1.0;
+            self.priority = 2.0 + self.value;
+            return true;
+        }
+        else if (self.stage == EnvelopeStage.DECAY)
+        {
+            self.value = @maximum(SoundFontMath.expCutoff(self.decay_slope * (current_time - self.decay_start_time)), self.sustain_level);
+            self.priority = 1.0 + self.value;
+            return self.value > SoundFontMath.NON_AUDIBLE;
+        }
+        else if (self.stage == EnvelopeStage.RELEASE)
+        {
+            self.value = self.release_level * SoundFontMath.exp_cutoff(self.release_slope * (current_time - self.release_start_time));
+            self.priority = self.value;
+            return self.value > SoundFontMath.NON_AUDIBLE;
+        }
+        else
+        {
+            unreachable;
+        }
+    }
+
+    fn get_value(self: *Self) f32
+    {
+        return self.value;
+    }
 };
 
 
@@ -1990,6 +2169,139 @@ const VolumeEnvelope = struct
 const ModulationEnvelope = struct
 {
     const Self = @This();
+
+    synthesizer: *Synthesizer,
+
+    attack_slope: f64,
+    decay_slope: f64,
+    release_slope: f64,
+
+    attack_start_time: f64,
+    hold_start_time: f64,
+    decay_start_time: f64,
+
+    decay_end_time: f64,
+    release_end_time: f64,
+
+    sustain_level: f32,
+    release_level: f32,
+
+    processed_sample_count: i32,
+    stage: i32,
+    value: f32,
+
+    fn init(synthesizer: *Synthesizer) Self
+    {
+        return Self
+        {
+            .synthesizer = synthesizer,
+            .attack_slope = 0.0,
+            .decay_slope = 0.0,
+            .release_slope = 0.0,
+            .attack_start_time = 0.0,
+            .hold_start_time = 0.0,
+            .decay_start_time = 0.0,
+            .decay_end_time = 0.0,
+            .release_end_time = 0.0,
+            .sustain_level = 0.0,
+            .release_level = 0.0,
+            .processed_sample_count = 0,
+            .stage = 0,
+            .priority = 0.0,
+        };
+    }
+
+    fn start(self: *Self, delay: f32, attack: f32, hold: f32, decay: f32, sustain: f32, release: f32) void
+    {
+        self.attack_slope = 1.0 / attack;
+        self.decay_slope = 1.0 / decay;
+        self.release_slope = 1.0 / release;
+
+        self.attack_start_time = delay;
+        self.hold_start_time = self.attack_start_time + attack;
+        self.decay_start_time = self.hold_start_time + hold;
+
+        self.decay_end_time = self.decay_start_time + decay;
+        self.release_end_time = release;
+
+        self.sustain_level = SoundFontMath.clamp(sustain, 0.0, 1.0);
+        self.release_level = 0.0;
+
+        self.processed_sample_count = 0;
+        self.stage = EnvelopeStage.DELAY;
+        self.value = 0.0;
+
+        self.process(0);
+    }
+
+    fn release_voice(self: *Self) void
+    {
+        self.stage = EnvelopeStage.RELEASE;
+        self.release_end_time += @intToFloat(f64, self.processed_sample_count) / @intToFloat(f64, self.synthesizer.sample_rate);
+        self.release_level = self.value;
+    }
+
+    fn process(self: *Self, sample_count: i32) void
+    {
+        self.processed_sample_count += sample_count;
+
+        const current_time = @intToFloat(f64, self.processed_sample_count) / @intToFloat(f64, self.synthesizer.sample_rate);
+
+        while (self.stage <= EnvelopeStage.HOLD)
+        {
+            const end_time = switch (self.stage)
+            {
+                EnvelopeStage.DELAY => self.attack_start_time,
+                EnvelopeStage.ATTACK => self.hold_start_time,
+                EnvelopeStage.HOLD => self.decay_start_time,
+                else => unreachable,
+            };
+
+            if (current_time < end_time)
+            {
+                break;
+            }
+            else
+            {
+                self.stage += 1;
+            }
+        }
+
+        if (self.stage == EnvelopeStage.DELAY)
+        {
+            self.value = 0.0;
+            return true;
+        }
+        else if (self.stage == EnvelopeStage.ATTACK)
+        {
+            self.value = self.attack_slope * (current_time - self.attack_start_time);
+            return true;
+        }
+        else if (self.stage == EnvelopeStage.HOLD)
+        {
+            self.value = 1.0;
+            return true;
+        }
+        else if (self.stage == EnvelopeStage.DECAY)
+        {
+            self.value = @maximum((self.decay_slope * (self.decay_end_time - current_time)), self.sustain_level);
+            return self.value > SoundFontMath.NON_AUDIBLE;
+        }
+        else if (self.stage == EnvelopeStage.RELEASE)
+        {
+            self.value = @maximum((self.release_level * self.release_slope * (self.release_end_time - current_time)), 0.0);
+            return self.value > SoundFontMath.NON_AUDIBLE;
+        }
+        else
+        {
+            unreachable;
+        }
+    }
+
+    fn get_value(self: *Self) f32
+    {
+        return self.value;
+    }
 };
 
 
