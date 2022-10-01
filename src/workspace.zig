@@ -19,25 +19,11 @@ pub fn main() !void
     var bw = std.io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
 
-    try stdout.print("========== SAMPLE HEADERS ==========\n", .{});
-    {
-        var i: usize = 0;
-        while (i < sf.sample_headers.len) : (i += 1)
-        {
-            const name = sf.sample_headers[i].name;
-            try stdout.print("{s}\n", .{name});
-        }
-    }
+    try stdout.print("========== START ==========\n", .{});
 
-    try stdout.print("========== INSTRUMENTS ==========\n", .{});
-    {
-        var i: usize = 0;
-        while (i < sf.instruments.len) : (i += 1)
-        {
-            const name = sf.instruments[i].name;
-            try stdout.print("{s}\n", .{name});
-        }
-    }
+    var settings = ziggysynth.SynthesizerSettings.init(44100);
+    var synthesizer = try ziggysynth.Synthesizer.init(allocator, sf, settings);
+    defer synthesizer.deinit();
 
     try bw.flush(); // don't forget to flush!
 }
