@@ -2225,6 +2225,116 @@ const Oscillator = struct
 const BiQuadFilter = struct
 {
     const Self = @This();
+
+    const RESONANCE_PEAK_OFFSET: f32 = 1.0 - 1.0 / @sqrt(2.0);
+
+    synthesizer: *Synthesizer,
+
+    active: bool,
+
+    a0: f32,
+    a1: f32,
+    a2: f32,
+    a3: f32,
+    a4: f32,
+
+    x1: f32,
+    x2: f32,
+    y1: f32,
+    y2: f32,
+
+    fn init(synthesizer: *Synthesizer) Self
+    {
+        return Self
+        {
+            .synthesizer = synthesizer,
+            .active = false,
+            .a0 = 0.0,
+            .a1 = 0.0,
+            .a2 = 0.0,
+            .a3 = 0.0,
+            .a4 = 0.0,
+            .x1 = 0.0,
+            .x2 = 0.0,
+            .y1 = 0.0,
+            .y2 = 0.0,
+        };
+    }
+
+    fn clearBuffer(self: *Self) void
+    {
+        self.x1 = 0.0;
+        self.x2 = 0.0;
+        self.y1 = 0.0;
+        self.y2 = 0.0;
+    }
+
+    fn setLowPassFilter(self: *Self, cutoff_frequency: f32, resonance: f32) void
+    {
+        if (cutoff_frequency < 0.499 * self.sample_rate)
+        {
+            self.active = true;
+
+            // This equation gives the Q value which makes the desired resonance peak.
+            // The error of the resultant peak height is less than 3%.
+            const q = resonance - BiQuadFilter.RESONANCE_PEAK_OFFSET / (1.0 + 6.0 * (resonance - 1.0));
+
+            const w = 2.0 * math.pi * cutoff_frequency / @intToFloat(f32, self.sample_rate);
+            const cosw = @cos(w);
+            const alpha = @sin(w) / (2.0 * q);
+
+            const b0 = (1.0 - cosw) / 2.0;
+            const b1 = 1.0 - cosw;
+            const b2 = (1.0 - cosw) / 2.0;
+            const a0 = 1.0 + alpha;
+            const a1 = -2.0 * cosw;
+            const a2 = 1.0 - alpha;
+
+            self.setCoefficients(a0, a1, a2, b0, b1, b2);
+        }
+        else
+        {
+            self.active = false;
+        }
+    }
+
+    fn processUnit(self: *Self, block: []f32) void
+    {
+        const block_length = block.len;
+
+        if (self.active)
+        {
+            var t: usize = 0;
+            while (t < block_length) : (t += 1)
+            {
+                const input = block[t];
+                const output = self.a0 * input + self.a1 * self.x1 + self.a2 * self.x2 - self.a3 * self.y1 - self.a4 * self.y2;
+
+                self.x2 = self.x1;
+                self.x1 = input;
+                self.y2 = self.y1;
+                self.y1 = output;
+
+                block[t] = output;
+            }
+        }
+        else
+        {
+            self.x2 = block[block_length - 2];
+            self.x1 = block[block_length - 1];
+            self.y2 = self.x2;
+            self.y1 = self.x1;
+        }
+    }
+
+    fn set_coefficients(self: *Self, a0: f32, a1: f32, a2: f32, b0: f32, b1: f32, b2: f32) void
+    {
+        self.a0 = b0 / a0;
+        self.a1 = b1 / a0;
+        self.a2 = b2 / a0;
+        self.a3 = a1 / a0;
+        self.a4 = a2 / a0;
+    }
 };
 
 
@@ -2302,7 +2412,7 @@ const VolumeEnvelope = struct
         self.release_level = self.value;
     }
 
-    fn process(self: *Self, sample_count: i32) bool
+    fn processUnit(self: *Self, sample_count: i32) bool
     {
         self.processed_sample_count += sample_count;
 
@@ -2613,4 +2723,257 @@ const Lfo = struct
 const Channel = struct
 {
     const Self = @This();
+
+    is_percussion_channel: bool,
+
+    bank_number: i32,
+    patch_number: i32,
+
+    modulation: i16,
+    volume: i16,
+    pan: i16,
+    expression: i16,
+    hold_pedal: bool,
+
+    reverb_send: u8,
+    chorus_send: u8,
+
+    rpn: i16,
+    pitch_bend_range: i16,
+    coarse_tune: i16,
+    fine_tune: i16,
+
+    pitch_bend: f32,
+
+    fn init(is_percussion_channel: bool) Self
+    {
+        var channel = Self
+        {
+            .is_percussion_channel = is_percussion_channel,
+            .bank_number = 0,
+            .patch_number = 0,
+            .modulation = 0,
+            .volume = 0,
+            .pan = 0,
+            .expression = 0,
+            .hold_pedal = false,
+            .reverb_send = 0,
+            .chorus_send = 0,
+            .rpn = 0,
+            .pitch_bend_range = 0,
+            .coarse_tune = 0,
+            .fine_tune = 0,
+            .pitch_bend = 0.0,
+        };
+
+        channel.reset();
+
+        return channel;
+    }
+
+    fn reset(self: *Self) void
+    {
+        self.bank_number = if (self.is_percussion_channel) 128 else 0;
+        self.patch_number = 0;
+
+        self.modulation = 0;
+        self.volume = 100 << 7;
+        self.pan = 64 << 7;
+        self.expression = 127 << 7;
+        self.hold_pedal = false;
+
+        self.reverb_send = 40;
+        self.chorus_send = 0;
+
+        self.rpn = -1;
+        self.pitch_bend_range = 2 << 7;
+        self.coarse_tune = 0;
+        self.fine_tune = 8192;
+
+        self.pitch_bend = 0.0;
+    }
+
+    fn resetAllControllers(self: *Self) void
+    {
+        self.modulation = 0;
+        self.expression = 127 << 7;
+        self.hold_pedal = false;
+
+        self.rpn = -1;
+
+        self.pitch_bend = 0.0;
+    }
+
+    fn setBank(self: *Self, value: i32) void
+    {
+        self.bank_number = value;
+
+        if (self.is_percussion_channel)
+        {
+            self.bank_number += 128;
+        }
+    }
+
+    fn setPatch(self: *Self, value: i32) void
+    {
+        self.patch_number = value;
+    }
+
+    fn setModulationCoarse(self: *Self, value: i32) void
+    {
+        self.modulation = (self.modulation & 0x7F) | (value << 7);
+    }
+
+    fn setModulationFine(self: *Self, value: i32) void
+    {
+        self.modulation = ((self.modulation & 0xFF80) | value);
+    }
+
+    fn setVolumeCoarse(self: *Self, value: i32) void
+    {
+        self.volume = (self.volume & 0x7F) | (value << 7);
+    }
+
+    fn setVolumeFine(self: *Self, value: i32) void
+    {
+        self.volume = ((self.volume & 0xFF80) | value);
+    }
+
+    fn setPanCoarse(self: *Self, value: i32) void
+    {
+        self.pan = (self.pan & 0x7F) | (value << 7);
+    }
+
+    fn setPanFine(self: *Self, value: i32) void
+    {
+        self.pan = ((self.pan & 0xFF80) | value);
+    }
+
+    fn setExpressionCoarse(self: *Self, value: i32) void
+    {
+        self.expression = (self.expression & 0x7F) | (value << 7);
+    }
+
+    fn setExpressionFine(self: *Self, value: i32) void
+    {
+        self.expression = ((self.expression & 0xFF80) | value);
+    }
+
+    fn setHoldPedal(self: *Self, value: i32) void
+    {
+        self.hold_pedal = value >= 64;
+    }
+
+    fn setReverbSend(self: *Self, value: i32) void
+    {
+        self.reverb_send = value;
+    }
+
+    fn setChorusSend(self: *Self, value: i32) void
+    {
+        self.chorus_send = value;
+    }
+
+    fn setRpnCoarse(self: *Self, value: i32) void
+    {
+        self.rpn = (self.rpn & 0x7F) | (value << 7);
+    }
+
+    fn setRpnFine(self: *Self, value: i32) void
+    {
+        self.rpn = ((self.rpn & 0xFF80) | value);
+    }
+
+    fn dataEntryCoarse(self: *Self, value: i32) void
+    {
+        if (self.rpn == 0)
+        {
+            self.pitch_bend_range = (self.pitch_bend_range & 0x7F) | (value << 7);
+        }
+        else if (self.rpn == 1)
+        {
+            self.fine_tune = (self.fine_tune & 0x7F) | (value << 7);
+        }
+        else if (self.rpn == 2)
+        {
+            self.coarse_tune = (value - 64);
+        }
+    }
+
+    fn dataEntryFine(self: *Self, value: i32) void
+    {
+        if (self.rpn == 0)
+        {
+            self.pitch_bend_range = ((self.pitch_bend_range & 0xFF80) | value);
+        }
+        else if (self.rpn == 1)
+        {
+            self.fine_tune = ((self.fine_tune & 0xFF80) | value);
+        }
+    }
+
+    fn setPitchBend(self: *Self, value1: i32, value2: i32) void
+    {
+        self.pitch_bend = (1.0 / 8192.0) * ((value1 | (value2 << 7)) - 8192.0);
+    }
+
+    fn getBankNumber(self: *const Self) i32
+    {
+        return self.bank_number;
+    }
+
+    fn getPatchNumber(self: *const Self) i32
+    {
+        return self.patch_number;
+    }
+
+    fn getModulation(self: *const Self) f32
+    {
+        return (50.0 / 16383.0) * self.modulation;
+    }
+
+    fn getVolume(self: *const Self) f32
+    {
+        return (1.0 / 16383.0) * self.volume;
+    }
+
+    fn getPan(self: *const Self) f32
+    {
+        return (100.0 / 16383.0) * @intToFloat(f32, self.pan) - 50.0;
+    }
+
+    fn getExpression(self: *const Self) f32
+    {
+        return (1.0 / 16383.0) * @intToFloat(f32, self.expression);
+    }
+
+    fn getHoldPedal(self: *const Self) bool
+    {
+        return self.hold_pedal;
+    }
+
+    fn getReverbSend(self: *const Self) f32
+    {
+        return (1.0 / 127.0) * @intToFloat(f32, self.reverb_send);
+    }
+
+    fn getChorusSend(self: *const Self) f32
+    {
+        return (1.0 / 127.0) * @intToFloat(f32, self.chorus_send);
+    }
+
+    fn getPitchBendRange(self: *const Self) f32
+    {
+        return @intToFloat(f32, self.pitch_bend_range >> 7) + 0.01 * @intToFloat(f32, self.pitch_bend_range & 0x7F);
+    }
+
+    fn getTune(self: *const Self) f32
+    {
+        return @intToFloat(f32, self.coarse_tune) + (1.0 / 8192.0) * @intToFloat(f32, self.fine_tune - 8192);
+    }
+
+    fn getPitchBend(self: *const Self) f32
+    {
+        return self.get_pitch_bend_range() * self.pitch_bend;
+    }
 };
