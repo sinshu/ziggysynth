@@ -1964,7 +1964,23 @@ const RegionPair = struct
 
 const RegionEx = struct
 {
-    fn start_volume_envelope(envelope: *VolumeEnvelope, region: *RegionPair, key: i32) void
+    fn startOscillator(oscillator: *Oscillator, data: []i16, region: *RegionPair) void
+    {
+        const sample_rate = region.instrument.sample_sample_rate;
+        const loop_mode = region.getSampleModes();
+        const start = region.getSampleStart();
+        const end = region.getSampleEnd();
+        const start_loop = region.getSampleStartLoop();
+        const end_loop = region.getSampleEndLoop();
+        const root_key = region.getRootKey();
+        const coarse_tune = region.getCoarseTune();
+        const fine_tune = region.getFineTune();
+        const scale_tuning = region.getScaleTuning();
+
+        oscillator.start(data, loop_mode, sample_rate, start, end, start_loop, end_loop, root_key, coarse_tune, fine_tune, scale_tuning);
+    }
+
+    fn startVolumeEnvelope(envelope: *VolumeEnvelope, region: *RegionPair, key: i32) void
     {
         // If the release time is shorter than 10 ms, it will be clamped to 10 ms to avoid pop noise.
 
@@ -1975,10 +1991,10 @@ const RegionEx = struct
         const sustain = SoundFontMath.decibelsToLinear(-region.getSustainVolumeEnvelope());
         const release = @maximum(region.getReleaseVolumeEnvelope(), 0.01);
 
-        envelope.start(delay, attack, hold, decay, sustain, release);
+        envelope.startUnit(delay, attack, hold, decay, sustain, release);
     }
 
-    fn start_modulation_envelope(envelope: *ModulationEnvelope, region: *RegionPair, key: i32, velocity: i32) void
+    fn startModulationEnvelope(envelope: *ModulationEnvelope, region: *RegionPair, key: i32, velocity: i32) void
     {
          // According to the implementation of TinySoundFont, the attack time should be adjusted by the velocity.
 
@@ -1989,17 +2005,17 @@ const RegionEx = struct
          const sustain = 1.0 - region.getSustainModulationEnvelope() / 100.0;
          const release = region.getReleaseModulationEnvelope();
 
-         envelope.start(delay, attack, hold, decay, sustain, release);
+         envelope.startUnit(delay, attack, hold, decay, sustain, release);
     }
 
-    fn start_vibrato(lfo: *Lfo, region: *RegionPair) void
+    fn startVibrato(lfo: *Lfo, region: *RegionPair) void
     {
-        lfo.start(region.getDelayVibratoLfo(), region.getFrequencyVibratoLfo());
+        lfo.startUnit(region.getDelayVibratoLfo(), region.getFrequencyVibratoLfo());
     }
 
-    fn start_modulation(lfo: *Lfo, region: *RegionPair) void
+    fn startModulation(lfo: *Lfo, region: *RegionPair) void
     {
-        lfo.start(region.getDelayModulationLfo(), region.getFrequencyModulationLfo());
+        lfo.startUnit(region.getDelayModulationLfo(), region.getFrequencyModulationLfo());
     }
 };
 
@@ -2022,6 +2038,186 @@ const VoiceCollection = struct
 const Oscillator = struct
 {
     const Self = @This();
+
+    // In this class, fixed-point numbers are used for speed-up.
+    // A fixed-point number is expressed by Int64, whose lower 24 bits represent the fraction part,
+    // and the rest represent the integer part.
+    // For clarity, fixed-point number variables have a suffix "_fp".
+
+    const FRAC_BITS = 24;
+    const FRAC_UNIT: i64 = 1 << Oscillator.FRAC_BITS;
+    const FP_TO_SAMPLE: f32 = 1.0 / (32768.0 * Oscillator.FRAC_UNIT);
+
+    synthesizer: *Synthesizer,
+
+    data: ?[]i16,
+    loop_mode: i32,
+    sample_rate: i32,
+    start: i32,
+    end: i32,
+    start_loop: i32,
+    end_loop: i32,
+    root_key: i32,
+
+    tune: f32,
+    pitch_change_scale: f32,
+    sample_rate_ratio: f32,
+
+    looping: bool,
+
+    position_fp: i64,
+
+    fn init(synthesizer: *Synthesizer) Self
+    {
+        return Self
+        {
+            .synthesizer = synthesizer,
+            .data = null,
+            .loop_mode = 0,
+            .sample_rate = 0,
+            .start = 0,
+            .end = 0,
+            .start_loop = 0,
+            .end_loop = 0,
+            .root_key = 0,
+            .tune = 0.0,
+            .pitch_change_scale = 0.0,
+            .sample_rate_ratio = 0.0,
+            .looping = false,
+            .position_fp = 0,
+        };
+    }
+
+    fn startUnit(self: *Self, data: []i16, loop_mode: i32, sample_rate: i32, start: i32, end: i32, start_loop: i32, end_loop: i32, root_key: i32, coarse_tune: i32, fine_tune: i32, scale_tuning: i32) void
+    {
+        self.data = data;
+        self.loop_mode = loop_mode;
+        self.sample_sample_rate = sample_rate;
+        self.start = start;
+        self.end = end;
+        self.start_loop = start_loop;
+        self.end_loop = end_loop;
+        self.root_key = root_key;
+
+        self.tune = coarse_tune + 0.01 * fine_tune;
+        self.pitch_change_scale = 0.01 * scale_tuning;
+        self.sample_rate_ratio = @intToFloat(f32, sample_rate) / @intToFloat(f32, self.synthesizer_sample_rate);
+
+        if (self.loop_mode == LoopMode.NO_LOOP)
+        {
+            self.looping = false;
+        }
+        else
+        {
+            self.looping = true;
+        }
+
+        self.position_fp = @intCast(i64, start) << Oscillator.FRAC_BITS;
+    }
+
+    fn releaseUnit(self: *Self) void
+    {
+        if (self.loop_mode == LoopMode.LOOP_UNTIL_NOTE_OFF)
+        {
+            self.looping = false;
+        }
+    }
+
+    fn processUnit(self: *Self, block: []f32, pitch: f32) bool
+    {
+        const pitch_change = self.pitch_change_scale * (pitch - self.root_key) + self.tune;
+        const pitch_ratio = self.sample_rate_ratio * math.pow(f32, 2.0, pitch_change / 12.0);
+        return self.fillBlock(block, pitch_ratio);
+    }
+
+    fn fillBlock(self: *Self, block: []f32, pitch_ratio: f64) bool
+    {
+        const pitch_ratio_fp = @floatToInt(i64, @intToFloat(f64, Oscillator.FRAC_UNIT) * pitch_ratio);
+
+        if (self.looping)
+        {
+            return self.fillBlock_continuous(block, pitch_ratio_fp);
+        }
+        else
+        {
+            return self.fillBlock_noLoop(block, pitch_ratio_fp);
+        }
+    }
+
+    fn fillBlock_noLoop(self: *Self, block: []f32, pitch_ratio_fp: i64) bool
+    {
+        const data_r = self.data.?;
+        const block_length = block.len();
+
+        var t: usize = 0;
+        while (t < block_length) : (t += 1)
+        {
+            const index = @intCast(usize, self.position_fp >> Oscillator.FRAC_BITS);
+
+            if (index >= self.end)
+            {
+                if (t > 0)
+                {
+                    var u = t;
+                    while (u < block_length) : (u += 1)
+                    {
+                        block[u] = 0.0;
+                    }
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            const x1 = @intCast(i64, data_r[index]);
+            const x2 = @intCast(i64, data_r[index + 1]);
+            const a_fp = self.position_fp & (Oscillator.FRAC_UNIT - 1);
+            block[t] = Oscillator.FP_TO_SAMPLE * ((x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
+
+            self.position_fp += pitch_ratio_fp;
+        }
+
+        return true;
+    }
+
+    fn fillBlock_continuous(self: *Self, block: []f32, pitch_ratio_fp: i64) bool
+    {
+        const data_r = self.data.?;
+        const block_length = block.len();
+
+        const end_loop_fp = @intCast(i64, self.end_loop) << Oscillator.FRAC_BITS;
+
+        const loop_length = @intCast(i64, self.end_loop - self.start_loop);
+        const loop_length_fp = loop_length << Oscillator.FRAC_BITS;
+
+        var t: usize = 0;
+        while (t < block_length) : (t += 1)
+        {
+            if (self.position_fp >= end_loop_fp)
+            {
+                self.position_fp -= loop_length_fp;
+            }
+
+            const index1 = @intCast(usize, self.position_fp >> Oscillator.FRAC_BITS);
+            var index2 = index1 + 1;
+
+            if (index2 >= self.end_loop)
+            {
+                index2 -= loop_length;
+            }
+
+            const x1 = @intCast(i64, data_r[index1]);
+            const x2 = @intCast(i64, data_r[index2]);
+            const a_fp = self.position_fp & (Oscillator.FRAC_UNIT - 1);
+            block[t] = Oscillator.FP_TO_SAMPLE * ((x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
+
+            self.position_fp += pitch_ratio_fp;
+        }
+
+        return true;
+    }
 };
 
 
@@ -2078,7 +2274,7 @@ const VolumeEnvelope = struct
         };
     }
 
-    fn start(self: *Self, delay: f32, attack: f32, hold: f32, decay: f32, sustain: f32, release: f32) void
+    fn startUnit(self: *Self, delay: f32, attack: f32, hold: f32, decay: f32, sustain: f32, release: f32) void
     {
         self.attack_slope = 1.0 / attack;
         self.decay_slope = -9.226 / decay;
@@ -2099,7 +2295,7 @@ const VolumeEnvelope = struct
         self.process(0);
     }
 
-    fn release_voice(self: *Self) void
+    fn releaseUnit(self: *Self) void
     {
         self.stage = EnvelopeStage.RELEASE;
         self.release_start_time = @intToFloat(f64, self.processed_sample_count) / @intToFloat(f64, self.synthesizer.sample_rate);
@@ -2168,7 +2364,7 @@ const VolumeEnvelope = struct
         }
     }
 
-    fn get_value(self: *Self) f32
+    fn getValue(self: *Self) f32
     {
         return self.value;
     }
@@ -2221,7 +2417,7 @@ const ModulationEnvelope = struct
         };
     }
 
-    fn start(self: *Self, delay: f32, attack: f32, hold: f32, decay: f32, sustain: f32, release: f32) void
+    fn startUnit(self: *Self, delay: f32, attack: f32, hold: f32, decay: f32, sustain: f32, release: f32) void
     {
         self.attack_slope = 1.0 / attack;
         self.decay_slope = 1.0 / decay;
@@ -2244,14 +2440,14 @@ const ModulationEnvelope = struct
         self.process(0);
     }
 
-    fn release_voice(self: *Self) void
+    fn releaseUnit(self: *Self) void
     {
         self.stage = EnvelopeStage.RELEASE;
         self.release_end_time += @intToFloat(f64, self.processed_sample_count) / @intToFloat(f64, self.synthesizer.sample_rate);
         self.release_level = self.value;
     }
 
-    fn process(self: *Self, sample_count: i32) void
+    fn processUnit(self: *Self, sample_count: i32) void
     {
         self.processed_sample_count += sample_count;
 
@@ -2308,7 +2504,7 @@ const ModulationEnvelope = struct
         }
     }
 
-    fn get_value(self: *Self) f32
+    fn getValue(self: *Self) f32
     {
         return self.value;
     }
@@ -2354,7 +2550,7 @@ const Lfo = struct
         };
     }
 
-    fn start(self: *Self, delay: f32, frequency: f32) void
+    fn startUnit(self: *Self, delay: f32, frequency: f32) void
     {
         if (frequency > 1.0E-3)
         {
@@ -2373,7 +2569,7 @@ const Lfo = struct
         }
     }
 
-    fn process(self: *Self) void
+    fn processUnit(self: *Self) void
     {
         if (!self.active)
         {
@@ -2406,7 +2602,7 @@ const Lfo = struct
         }
     }
 
-    fn get_value(self: *Self) f32
+    fn getValue(self: *Self) f32
     {
         return self.value;
     }
