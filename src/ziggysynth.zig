@@ -2329,6 +2329,116 @@ const Voice = struct
 const VoiceCollection = struct
 {
     const Self = @This();
+
+    synthesizer: *Synthesizer,
+    block_buffer: []f32,
+    voices: []Voice,
+    active_voice_count: i32,
+
+    fn init(allocator: Allocator, synthesizer: *Synthesizer) !Self
+    {
+        var block_buffer = try allocator.alloc(f32, synthesizer.block_length * synthesizer.maximum_polyphony);
+        errdefer allocator.free(block_buffer);
+
+        var voices = try allocator.alloc(Voice, synthesizer.maximum_polyphony);
+        errdefer allocator.free(voices);
+
+        var i: usize = 0;
+        while (i < voices.len) : (i += 1)
+        {
+            const buffer_start = synthesizer.block_length * i;
+            const buffer_end = buffer_start + synthesizer.block_length;
+            var block = block_buffer[buffer_start..buffer_end];
+            voices[i] = Voice.init(synthesizer, block);
+        }
+
+        return Self
+        {
+            .synthesizer = synthesizer,
+            .block_buffer = block_buffer,
+            .voices = voices,
+            .active_voice_count = 0,
+        };
+    }
+
+    fn requestNew(self: *Self, region: *InstrumentRegion, channel: i32) ?*Voice
+    {
+        // If an exclusive class is assigned to the region, find a voice with the same class.
+        // If found, reuse it to avoid playing multiple voices with the same class at a time.
+        var exclusive_class = region.getExclusiveClass();
+        if (exclusive_class != 0)
+        {
+            var i: usize = 0;
+            while (i < self.active_voice_count) : (i += 1)
+            {
+                var voice = &self.voices[i];
+                if (voice.getExclusiveClass() == exclusive_class and voice.channel == channel)
+                {
+                    return voice;
+                }
+            }
+        }
+
+        // If the number of active voices is less than the limit, use a free one.
+        if (self.active_voice_count < self.voices.len)
+        {
+            var free = &self.voices[self.active_voice_count];
+            self.active_voice_count += 1;
+            return free;
+        }
+
+        // Too many active voices...
+        // Find one which has the lowest priority.
+        var candidate: ?*Voice = null;
+        var lowest_priority: f32 = 1000000.0;
+        var i: usize = 0;
+        while (i < self.active_voice_count) : (i += 1)
+        {
+            var voice = self.voices[i];
+            var priority = voice.getPriority();
+            if (priority < lowest_priority)
+            {
+                lowest_priority = priority;
+                candidate = voice;
+            }
+            else if (priority == lowest_priority)
+            {
+                // Same priority...
+                // The older one should be more suitable for reuse.
+                if (voice.voice_length > candidate.?.voice_length)
+                {
+                    candidate = voice;
+                }
+            }
+        }
+        return candidate;
+    }
+
+    fn processUnit(self: *Self) void
+    {
+        var i: usize = 0;
+
+        while (true)
+        {
+            if (i == self.active_voice_count)
+            {
+                return;
+            }
+
+            if (self.voices[i].processUnit())
+            {
+                i += 1;
+            }
+            else
+            {
+                self.active_voice_count -= 1;
+
+                var tmp = self.voices[i];
+                self.voices[i] = self.voices[self.active_voice_count];
+                self.voices[self.active_voice_count] = tmp;
+            }
+        }
+    }
 };
 
 
