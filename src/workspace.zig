@@ -25,5 +25,9 @@ pub fn main() !void
     var synthesizer = try ziggysynth.Synthesizer.init(allocator, sf, settings);
     defer synthesizer.deinit();
 
+    synthesizer.processMidiMessage(0,0,0,0);
+
+    try stdout.print("========== END ==========\n", .{});
+
     try bw.flush(); // don't forget to flush!
 }
