@@ -1713,6 +1713,8 @@ pub const Synthesizer = struct
 
     sample_rate: i32,
     block_size: i32,
+    channels: [16]Channel,
+    minimum_voice_length: i32,
 };
 
 
@@ -2024,6 +2026,302 @@ const RegionEx = struct
 const Voice = struct
 {
     const Self = @This();
+
+    const PLAYING: i32 = 0;
+    const RELEASE_REQUESTED: i32 = 1;
+    const RELEASED: i32 = 2;
+
+    synthesizer: *Synthesizer,
+
+    vol_env: VolumeEnvelope,
+    mod_env: ModulationEnvelope,
+
+    vib_lfo: Lfo,
+    mod_lfo: Lfo,
+
+    oscillator: Oscillator,
+    filter: BiQuadFilter,
+
+    block: []f32,
+
+    // A sudden change in the mix gain will cause pop noise.
+    // To avoid this, we save the mix gain of the previous block,
+    // and smooth out the gain if the gap between the current and previous gain is too large.
+    // The actual smoothing process is done in the WriteBlock method of the Synthesizer class.
+
+    previous_mix_gain_left: f32,
+    previous_mix_gain_right: f32,
+    current_mix_gain_left: f32,
+    current_mix_gain_right: f32,
+
+    previous_reverb_send: f32,
+    previous_chorus_send: f32,
+    current_reverb_send: f32,
+    current_chorus_send: f32,
+
+    exclusive_class: i32,
+    channel: i32,
+    key: i32,
+    velocity: i32,
+
+    note_gain: f32,
+
+    cutoff: f32,
+    resonance: f32,
+
+    vib_lfo_to_pitch: f32,
+    mod_lfo_to_pitch: f32,
+    mod_env_to_pitch: f32,
+
+    mod_lfo_to_cutoff: i32,
+    mod_env_to_cutoff: i32,
+    dynamic_cutoff: bool,
+
+    mod_lfo_to_volume: f32,
+    dynamic_volume: bool,
+
+    instrument_pan: f32,
+    instrument_reverb: f32,
+    instrument_chorus: f32,
+
+    // Some instruments require fast cutoff change, which can cause pop noise.
+    // This is used to smooth out the cutoff frequency.
+    smoothed_cutoff: f32,
+
+    voice_state: i32,
+    voice_length: i32,
+
+    fn init(synthesizer: *Synthesizer, block: []f32) Self
+    {
+        return Self
+        {
+            .synthesizer = synthesizer,
+            .vol_env = VolumeEnvelope.init(synthesizer),
+            .mod_env = ModulationEnvelope.init(synthesizer),
+            .vib_lfo = Lfo.init(synthesizer),
+            .mod_lfo = Lfo.init(synthesizer),
+            .oscillator = Oscillator.init(synthesizer),
+            .filter = BiQuadFilter.init(synthesizer),
+            .block = block,
+            .previous_mix_gain_left = 0.0,
+            .previous_mix_gain_right = 0.0,
+            .current_mix_gain_left = 0.0,
+            .current_mix_gain_right = 0.0,
+            .previous_reverb_send = 0.0,
+            .previous_chorus_send = 0.0,
+            .current_reverb_send = 0.0,
+            .current_chorus_send = 0.0,
+            .exclusive_class = 0,
+            .channel = 0,
+            .key = 0,
+            .velocity = 0,
+            .note_gain = 0.0,
+            .cutoff = 0.0,
+            .resonance = 0.0,
+            .vib_lfo_to_pitch = 0.0,
+            .mod_lfo_to_pitch = 0.0,
+            .mod_env_to_pitch = 0.0,
+            .mod_lfo_to_cutoff = 0,
+            .mod_env_to_cutoff = 0,
+            .dynamic_cutoff = false,
+            .mod_lfo_to_volume = 0.0,
+            .dynamic_volume = false,
+            .instrument_pan = 0.0,
+            .instrument_reverb = 0.0,
+            .instrument_chorus = 0.0,
+            .smoothed_cutoff = 0.0,
+            .voice_state = 0,
+            .voice_length = 0,
+        };
+    }
+
+    fn startUnit(self: *Self, data: []i16, region: *RegionPair, channel: i32, key: i32, velocity: i32) void
+    {
+        self.exclusive_class = region.getExclusiveClass();
+        self.channel = channel;
+        self.key = key;
+        self.velocity = velocity;
+
+        if (velocity > 0)
+        {
+            // According to the Polyphone's implementation, the initial attenuation should be reduced to 40%.
+            // I'm not sure why, but this indeed improves the loudness variability.
+            const sample_attenuation = 0.4 * region.getInitialAttenuation();
+            const filter_attenuation = 0.5 * region.getInitialFilterQ();
+            const decibels = 2.0 * SoundFontMath.linearToDecibels(@intToFloat(f32, velocity) / 127.0) - sample_attenuation - filter_attenuation;
+            self.note_gain = SoundFontMath.decibelsToLinear(decibels);
+        }
+        else
+        {
+            self.note_gain = 0.0;
+        }
+
+        self.cutoff = region.getInitialFilterCutoffFrequency();
+        self.resonance = SoundFontMath.decibelsToLinear(region.getInitialFilterQ());
+
+        self.vib_lfo_to_pitch = 0.01 * @intToFloat(f32, region.getVibratoLfoToPitch());
+        self.mod_lfo_to_pitch = 0.01 * @intToFloat(f32, region.getModulationLfoToPitch());
+        self.mod_env_to_pitch = 0.01 * @intToFloat(f32, region.getModulationEnvelopeToPitch());
+
+        self.mod_lfo_to_cutoff = region.getModulationLfoToFilterCutoffFrequency();
+        self.mod_env_to_cutoff = region.getModulationEnvelopeToFilterCutoffFrequency();
+        self.dynamic_cutoff = self.mod_lfo_to_cutoff != 0 or self.mod_env_to_cutoff != 0;
+
+        self.mod_lfo_to_volume = region.getModulationLfoToVolume();
+        self.dynamic_volume = self.mod_lfo_to_volume > 0.05;
+
+        self.instrument_pan = SoundFontMath.clamp(region.getPan(), -50.0, 50.0);
+        self.instrument_reverb = 0.01 * region.getReverbEffectsSend();
+        self.instrument_chorus = 0.01 * region.getChorusEffectsSend();
+
+        RegionEx.startVolumeEnvelope(&self.vol_env, region, key, velocity);
+        RegionEx.startModulationEnvelope(&self.mod_env, region, key, velocity);
+        RegionEx.startVibrato(&self.vib_lfo, region, key, velocity);
+        RegionEx.startModulation(&self.mod_lfo, region, key, velocity);
+        RegionEx.startOscillator(&self.oscillator, data, region);
+        self.filter.clearBuffer();
+        self.filter.setLowPassFilter(self.cutoff, self.resonance);
+
+        self.smoothed_cutoff = self.cutoff;
+
+        self.voice_state = Voice.PLAYING;
+        self.voice_length = 0;
+    }
+
+    fn end(self: *Self) void
+    {
+        if (self.voice_state == Voice.PLAYING)
+        {
+            self.voice_state = Voice.RELEASE_REQUESTED;
+        }
+    }
+
+    fn kill(self: *Self) void
+    {
+        self.note_gain = 0.0;
+    }
+
+    fn processUnit(self: *Self) bool
+    {
+        if (self.note_gain < SoundFontMath.NON_AUDIBLE)
+        {
+            return false;
+        }
+
+        const channel_info = &self.synthesizer.channels[self.channel];
+
+        self.releaseIfNecessary(channel_info);
+
+        if (!self.vol_env.processUnit(self.block_size))
+        {
+            return false;
+        }
+
+        self.mod_env.processUnit(self.block_size);
+        self.vib_lfo.processUnit();
+        self.mod_lfo.processUnit();
+
+        const vib_pitch_change = (0.01 * channel_info.getModulation() + self.vib_lfo_to_pitch) * self.vib_lfo.getValue();
+        const mod_pitch_change = self.mod_lfo_to_pitch * self.mod_lfo.getValue() + self.mod_env_to_pitch * self.mod_env.getValue();
+        const channel_pitch_change = channel_info.getTune() + channel_info.getPitchBend();
+        const pitch = @intToFloat(f32, self.key) + vib_pitch_change + mod_pitch_change + channel_pitch_change;
+        if (!self.oscillator.processUnit(self.block, pitch))
+        {
+            return false;
+        }
+
+        if (self.dynamic_cutoff)
+        {
+            const cents = @intToFloat(f32, self.mod_lfo_to_cutoff) * self.mod_lfo.getValue() + @intToFloat(f32, self.mod_env_to_cutoff) * self.mod_env.getValue();
+            const factor = SoundFontMath.centsToMultiplyingFactor(cents);
+            const new_cutoff = factor * self.cutoff;
+
+            // The cutoff change is limited within x0.5 and x2 to reduce pop noise.
+            const lower_limit = 0.5 * self.smoothed_cutoff;
+            const upper_limit = 2.0 * self.smoothed_cutoff;
+            self.smoothed_cutoff = SoundFontMath.clamp(new_cutoff, lower_limit, upper_limit);
+
+            self.filter.setLowPassFilter(self.smoothed_cutoff, self.resonance);
+        }
+        self.filter.processUnit(self.block);
+
+        self.previous_mix_gain_left = self.current_mix_gain_left;
+        self.previous_mix_gain_right = self.current_mix_gain_right;
+        self.previous_reverb_send = self.current_reverb_send;
+        self.previous_chorus_send = self.current_chorus_send;
+
+        // According to the GM spec, the following value should be squared.
+        const ve = channel_info.getVolume() * channel_info.getExpression();
+        const channel_gain = ve * ve;
+
+        var mix_gain = self.note_gain * channel_gain * self.vol_env.getValue();
+        if (self.dynamic_volume)
+        {
+            const decibels = self.mod_lfo_to_volume * self.mod_lfo.getValue();
+            mix_gain *= SoundFontMath.decibelsToLinear(decibels);
+        }
+
+        const angle = (math.pi / 200.0) * (channel_info.getPan() + self.instrument_pan + 50.0);
+        if (angle <= 0.0)
+        {
+            self.current_mix_gain_left = mix_gain;
+            self.current_mix_gain_right = 0.0;
+        }
+        else if (angle >= SoundFontMath.HALF_PI)
+        {
+            self.current_mix_gain_left = 0.0;
+            self.current_mix_gain_right = mix_gain;
+        }
+        else
+        {
+            self.current_mix_gain_left = mix_gain * @cos(angle);
+            self.current_mix_gain_right = mix_gain * @sin(angle);
+        }
+
+        self.current_reverb_send = SoundFontMath.clamp(channel_info.getReverbSend() + self.instrument_reverb, 0.0, 1.0);
+        self.current_chorus_send = SoundFontMath.clamp(channel_info.getChorusSend() + self.instrument_chorus, 0.0, 1.0);
+
+        if (self.voice_length == 0)
+        {
+            self.previous_mix_gain_left = self.current_mix_gain_left;
+            self.previous_mix_gain_right = self.current_mix_gain_right;
+            self.previous_reverb_send = self.current_reverb_send;
+            self.previous_chorus_send = self.current_chorus_send;
+        }
+
+        self.voice_length += self.block_size;
+
+        return true;
+    }
+
+    fn releaseIfNecessary(self: *Self, channel_info: *Channel) void
+    {
+        if (self.voice_length < self.synthesizer.minimum_voice_length)
+        {
+            return;
+        }
+
+        if (self.voice_state == Voice.RELEASE_REQUESTED and !channel_info.getHoldPedal())
+        {
+            self.vol_env.releaseUnit();
+            self.mod_env.releaseUnit();
+            self.oscillator.releaseUnit();
+
+            self.voice_state = Voice.RELEASED;
+        }
+    }
+
+    fn getPriority(self: *const Self) f32
+    {
+        if (self.note_gain < SoundFontMath.NON_AUDIBLE)
+        {
+            return 0.0;
+        }
+        else
+        {
+            return self.vol_env.getPriority();
+        }
+    }
 };
 
 
