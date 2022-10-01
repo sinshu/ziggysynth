@@ -2,11 +2,15 @@ const std = @import("std");
 const math = std.math;
 const mem = std.mem;
 const Allocator = mem.Allocator;
+const HashMap = std.AutoHashMap;
 
 
 
 const ZiggySynthError = error {
     InvalidSoundFont,
+    SampleRateIsOutOfRange,
+    BlockSizeIfOutOfRange,
+    MaximumPolyphonyIsOutOfRange,
     Unexpected,
 };
 
@@ -1711,10 +1715,172 @@ pub const Synthesizer = struct
 {
     const Self = @This();
 
+    const CHANNEL_COUNT: i32 = 16;
+    const PERCUSSION_CHANNEL: i32 = 9;
+
+    allocator: Allocator,
+
+    sound_font: *SoundFont,
     sample_rate: i32,
     block_size: i32,
-    channels: [16]Channel,
+    maximum_polyphony: i32,
+    enable_reverb_and_chorus: bool,
+
     minimum_voice_length: i32,
+
+    preset_lookup: HashMap(i32, *Preset),
+    default_preset: *Preset,
+
+    channels: [CHANNEL_COUNT]Channel,
+
+    voices: VoiceCollection,
+
+    block_left: []f32,
+    block_right: []f32,
+
+    inverse_block_size: f32,
+
+    block_read: usize,
+
+    master_volume: f32,
+
+    fn init(allocator: Allocator, sound_font: *SoundFont, settings: *SynthesizerSettings) !Self
+    {
+        settings.validate();
+
+        const minimum_voice_length = settings.sample_rate / 500;
+
+        var preset_lookup: HashMap(i32, *Preset) = HashMap.init(allocator);
+        var min_preset_id = math.maxInt(i32);
+        var default_preset: ?*Preset = null;
+        {
+            var i: usize = 0;
+            while (i < sound_font.presets.len) : (i += 1)
+            {
+                const preset = &sound_font.presets[i];
+                // The preset ID is Int32, where the upper 16 bits represent the bank number
+                // and the lower 16 bits represent the patch number.
+                // This ID is used to search for presets by the combination of bank number
+                // and patch number.
+                var preset_id = (preset.getBankNumber() << 16) | preset.getPatchNumber();
+                _ = preset_lookup.put(preset_id, preset);
+
+                // The preset with the minimum ID number will be default.
+                // If the SoundFont is GM compatible, the piano will be chosen.
+                if (preset_id < min_preset_id)
+                {
+                    default_preset = preset;
+                    min_preset_id = preset_id;
+                }
+            }
+        }
+
+        var channels = mem.zeroes([Synthesizer.CHANNEL_COUNT]Channel);
+        {
+            var i: usize = 0;
+            while (i < channels.len) : (i += 1)
+            {
+                channels[i] = Channel.init(i == Synthesizer.PERCUSSION_CHANNEL);
+            }
+        }
+
+        const voices = VoiceCollection.init(allocator, settings.maximum_polyphony);
+
+        const block_left = allocator.alloc(f32, settings.block_size);
+        const block_right = allocator.alloc(f32, settings.block_size);
+
+        const inverse_block_size = 1.0 / @intToFloat(f32, settings.block_size);
+
+        const block_read = settings.block_size;
+
+        const master_volume = 0.5;
+
+        return Self
+        {
+            .allocator = allocator,
+            .sound_font = sound_font,
+            .sample_rate = settings.sample_rate,
+            .block_size = settings.block_size,
+            .maximum_polyphony = settings.maximum_polyphony,
+            .enable_reverb_and_chorus = settings.enable_reverb_and_chorus,
+            .minimum_voice_length = minimum_voice_length,
+            .preset_lookup = preset_lookup,
+            .default_preset = default_preset.?,
+            .channels = channels,
+            .voices = voices,
+            .block_left = block_left,
+            .block_right = block_right,
+            .inverse_block_size = inverse_block_size,
+            .block_read = block_read,
+            .master_volume = master_volume,
+        };
+    }
+
+    fn deinit(self: *Self) void
+    {
+        self.allocator.free(self.block_right);
+        self.allocator.free(self.block_left);
+        self.voices.deinit();
+        self.preset_lookup.deinit();
+    }
+};
+
+
+
+pub const SynthesizerSettings = struct
+{
+    const Self = @This();
+
+    const DEFAULT_BLOCK_SIZE: i32 = 64;
+    const DEFAULT_MAXIMUM_POLYPHONY: i32 = 64;
+    const DEFAULT_ENABLE_REVERB_AND_CHORUS: bool = true;
+
+    sample_rate: i32,
+    block_size: i32,
+    maximum_polyphony: i32,
+    enable_reverb_and_chorus: bool,
+
+    pub fn init(sample_rate: i32) Self
+    {
+        return Self
+        {
+            .sample_rate = sample_rate,
+            .block_size = SynthesizerSettings.DEFAULT_BLOCK_SIZE,
+            .maximum_polyphony = SynthesizerSettings.DEFAULT_MAXIMUM_POLYPHONY,
+            .enable_reverb_and_chorus = SynthesizerSettings.DEFAULT_ENABLE_REVERB_AND_CHORUS,
+        };
+    }
+
+    fn validate(self: *const Self) !void
+    {
+        try SynthesizerSettings.checkSampleRate(self.sample_rate);
+        try SynthesizerSettings.checkBlockSize(self.block_size);
+        try SynthesizerSettings.checkMaximumPolyphony(self.maximum_polyphony);
+    }
+
+    fn checkSampleRate(value: i32) !void
+    {
+        if (!(16000 <= value and value <= 192000))
+        {
+            return ZiggySynthError.SampleRateIsOutOfRange;
+        }
+    }
+
+    fn checkBlockSize(value: i32) !void
+    {
+        if (!(8 <= value and value <= 1024))
+        {
+            return ZiggySynthError.BlockSizeIfOutOfRange;
+        }
+    }
+
+    fn checkMaximumPolyphony(value: i32) !void
+    {
+        if (!(8 <= value and value <= 256))
+        {
+            return ZiggySynthError.MaximumPolyphonyIsOutOfRange;
+        }
+    }
 };
 
 
@@ -2330,7 +2496,10 @@ const VoiceCollection = struct
 {
     const Self = @This();
 
+    allocator: Allocator,
+
     synthesizer: *Synthesizer,
+
     block_buffer: []f32,
     voices: []Voice,
     active_voice_count: i32,
@@ -2354,11 +2523,18 @@ const VoiceCollection = struct
 
         return Self
         {
+            .allocator = allocator,
             .synthesizer = synthesizer,
             .block_buffer = block_buffer,
             .voices = voices,
             .active_voice_count = 0,
         };
+    }
+
+    fn deinit(self: *Self) void
+    {
+        self.allocator.free(self.voices);
+        self.allocator.free(self.block_buffer);
     }
 
     fn requestNew(self: *Self, region: *InstrumentRegion, channel: i32) ?*Voice
