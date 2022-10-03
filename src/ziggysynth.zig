@@ -20,7 +20,7 @@ const ZiggySynthError = error {
 
 const ArrayMath = struct
 {
-    fn multiply_add(a: f32, x: []f32, destination: []f32) void
+    fn multiplyAdd(a: f32, x: []f32, destination: []f32) void
     {
         const destination_length = destination.len;
 
@@ -31,7 +31,7 @@ const ArrayMath = struct
         }
     }
 
-    fn multiply_add_slope(a: f32, step: f32, x: []f32, destination: []f32) void
+    fn multiplyAddSlope(a: f32, step: f32, x: []f32, destination: []f32) void
     {
         const destination_length = destination.len;
         var b = a;
@@ -61,6 +61,29 @@ const BinaryReader = struct
         var data: [@sizeOf(T)]u8 = undefined;
         _ = try reader.readNoEof(&data);
         return @byteSwap(@bitCast(T, data));
+    }
+
+    fn readIntVariableLength(reader: anytype) !i32
+    {
+        var acc: i32 = 0;
+        var count: i32 = 0;
+
+        while (true)
+        {
+            const value = try @intCast(i32, BinaryReader.read(u8, reader));
+            acc = (acc << 7) | (value & 127);
+            if ((value & 128) == 0)
+            {
+                break;
+            }
+            count += 1;
+            if (count == 4)
+            {
+                return ZiggySynthError.Unexpected;
+            }
+        }
+
+        return acc;
     }
 };
 
@@ -2160,12 +2183,12 @@ pub const Synthesizer = struct
 
         if (@fabs(current_gain - previous_gain) < 1.0E-3)
         {
-            ArrayMath.multiply_add(current_gain, source, destination);
+            ArrayMath.multiplyAdd(current_gain, source, destination);
         }
         else
         {
             const step = self.inverse_block_size * (current_gain - previous_gain);
-            ArrayMath.multiply_add_slope(previous_gain, step, source, destination);
+            ArrayMath.multiplyAddSlope(previous_gain, step, source, destination);
         }
     }
 };
@@ -4007,6 +4030,7 @@ pub const MidiFile = struct
 
     const MAX_TRACK_COUNT: usize = 32;
 
+    allocator: Allocator,
     messages: []Message,
     times: []f64,
 
@@ -4031,7 +4055,7 @@ pub const MidiFile = struct
         }
 
         const track_count = @intCast(usize, BinaryReader.readBigEndian(i16, reader));
-        const resolution = BinaryReader.readBigEndian(i16, reader);
+        const resolution = @intCast(i32, BinaryReader.readBigEndian(i16, reader));
 
         if (track_count > MidiFile.MAX_TRACK_COUNT)
         {
@@ -4080,6 +4104,195 @@ pub const MidiFile = struct
             }
         }
 
-        return try MidiFile.merge_tracks(allocator, &message_lists, &tick_lists, resolution);
+        return try MidiFile.merge_tracks(allocator, message_lists[0..track_count], tick_lists[0..track_count], resolution);
+    }
+
+    fn deinit(self: *Self) void
+    {
+        self.allocator.free(self.times);
+        self.allocator.free(self.messages);
+    }
+
+    fn read_track(reader: anytype, messages: *ArrayList(Message), ticks: *ArrayList(i32)) !void
+    {
+        const chunk_type = try BinaryReader.read([4]u8, reader);
+        if (!mem.eql(u8, &chunk_type, "MTrk"))
+        {
+            return ZiggySynthError.InvalidMidiFile;
+        }
+
+        _ = try BinaryReader.readBigEndian(i32, reader);
+
+        var tick: i32 = 0;
+        var last_status: u8 = 0;
+
+        while (true)
+        {
+            const delta = try BinaryReader.readIntVariableLength(reader);
+            const first = try BinaryReader.read(u8, reader);
+
+            tick += delta;
+
+            if ((first & 128) == 0)
+            {
+                const command = last_status & 0xF0;
+                if (command == 0xC0 or command == 0xD0)
+                {
+                    try messages.append(Message.common1(last_status, first));
+                    try ticks.append(tick);
+                }
+                else
+                {
+                    const data2 = try BinaryReader.read(u8, reader);
+                    try messages.append(Message.common2(last_status, first, data2));
+                    try ticks.append(tick);
+                }
+
+                continue;
+            }
+
+            switch (first)
+            {
+                0xF0 => try MidiFile.discardData(reader),
+                0xF7 => try MidiFile.discardData(reader),
+                0xFF => switch (try BinaryReader.read(u8, reader))
+                    {
+                        0x2F =>
+                        {
+                            try BinaryReader.read(u8, reader);
+                            try messages.append(Message.endOfTrack());
+                            try ticks.append(tick);
+                            return;
+                        },
+                        0x51 =>
+                        {
+                            try messages.append(Message.tempoChange(try MidiFile.readTempo(reader)));
+                            try ticks.append(tick);
+                        },
+                        else => try MidiFile.discardData(reader),
+                    },
+                _ =>
+                {
+                    const command = first & 0xF0;
+                    if (command == 0xC0 or command == 0xD0)
+                    {
+                        const data1 = try BinaryReader.read(u8, reader);
+                        try messages.append(Message.common1(first, data1));
+                        try ticks.append(tick);
+                    }
+                    else
+                    {
+                        const data1 = try BinaryReader.read(u8, reader);
+                        const data2 = try BinaryReader.read(u8, reader);
+                        messages.append(Message.common2(first, data1, data2));
+                        ticks.append(tick);
+                    }
+                },
+            }
+
+            last_status = first;
+        }
+    }
+
+    fn mergeTracks(allocator: Allocator, message_lists: []ArrayList(Message), tick_lists: []ArrayList(i32), resolution: i32) !Self
+    {
+        var merged_messages = ArrayList(Message).init(allocator);
+        defer merged_messages.deinit();
+
+        var merged_times = ArrayList(f64).init(allocator);
+        defer merged_times.deinit();
+
+        var indices = mem.zeroes([MidiFile.MAX_TRACK_COUNT]usize);
+
+        var current_tick: i32 = 0;
+        var current_time: f64 = 0.0;
+
+        var tempo: f64 = 120.0;
+
+        while (true)
+        {
+            var min_tick = math.maxInt(i32);
+            var min_index: i32 = -1;
+
+            var ch: usize = 0;
+            while (ch < tick_lists.len) : (ch += 1)
+            {
+                if (indices[ch] < tick_lists[ch].len)
+                {
+                    const tick = tick_lists[ch][indices[ch]];
+                    if (tick < min_tick)
+                    {
+                        min_tick = tick;
+                        min_index = @intCast(i32, ch);
+                    }
+                }
+            }
+
+            if (min_index == -1)
+            {
+                break;
+            }
+
+            const next_tick = tick_lists[@intCast(usize, min_index)][indices[@intCast(usize, min_index)]];
+            const delta_tick = next_tick - current_tick;
+            const delta_time = 60.0 / (@intToFloat(f64, resolution) * tempo) * @intToFloat(f64, delta_tick);
+
+            current_tick += delta_tick;
+            current_time += delta_time;
+
+            const message = message_lists[@intCast(usize, min_index)][indices[@intCast(usize, min_index)]];
+            if (message.getMessageType() == Message.TEMPO_CHANGE)
+            {
+                tempo = message.getTempo();
+            }
+            else
+            {
+                merged_messages.append(message);
+                merged_times.append(current_time);
+            }
+
+            indices[@intCast(usize, min_index)] += 1;
+        }
+
+        var messages = try allocator.alloc(Message, merged_messages.items.len);
+        errdefer allocator.free(messages);
+
+        var times = try allocator.alloc(f64, merged_times.items.len);
+        errdefer allocator.free(times);
+
+        var i: usize = 0;
+        while (i < messages.len) : (i += 1)
+        {
+            messages[i] = merged_messages.items[i];
+            times[i] = merged_times.items[i];
+        }
+
+        return Self
+        {
+            .allocator = allocator,
+            .messages = messages,
+            .times = times,
+        };
+    }
+
+    fn discardData(reader: anytype) !void
+    {
+        const size = try BinaryReader.readIntVariableLength(reader);
+        try reader.skipBytes(size, .{});
+    }
+
+    fn readRempo(reader: anytype) !i32
+    {
+        const size = try BinaryReader.readIntVariableLength(reader);
+        if (size != 3)
+        {
+            return ZiggySynthError.InvalidMidiFile;
+        }
+
+        const b1 = try BinaryReader.read(u8, reader);
+        const b2 = try BinaryReader.read(u8, reader);
+        const b3 = try BinaryReader.read(u8, reader);
+
+        return ((b1 << 16) | (b2 << 8) | b3);
     }
 };
