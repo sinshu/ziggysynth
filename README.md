@@ -4,6 +4,14 @@ ZiggySynth is a SoundFont MIDI synthesizer written in pure Rust, ported from [Me
 
 
 
+## Demo
+
+https://www.youtube.com/watch?v=yOosrF4rnFs
+
+[![Youtube video](https://img.youtube.com/vi/yOosrF4rnFs/0.jpg)](https://www.youtube.com/watch?v=yOosrF4rnFs)
+
+
+
 ## Examples
 
 An example code to synthesize a simple chord:
