@@ -1,5 +1,8 @@
 const std = @import("std");
 const ziggysynth = @import("ziggysynth.zig");
+const mem = std.mem;
+const Allocator = mem.Allocator;
+const AutoHashMap = std.AutoHashMap;
 
 pub fn main() !void
 {
@@ -25,9 +28,54 @@ pub fn main() !void
     var synthesizer = try ziggysynth.Synthesizer.init(allocator, sf, settings);
     defer synthesizer.deinit();
 
-    synthesizer.processMidiMessage(0,0,0,0);
+    // Play some notes (middle C, E, G).
+    synthesizer.noteOn(0, 60, 100);
+    synthesizer.noteOn(0, 64, 100);
+    synthesizer.noteOn(0, 67, 100);
+
+    // The output buffer (3 seconds).
+    const sample_count = 3 * @intCast(usize, settings.sample_rate);
+    var left: []f32 = try allocator.alloc(f32, sample_count);
+    defer allocator.free(left);
+    var right: []f32 = try allocator.alloc(f32, sample_count);
+    defer allocator.free(right);
+
+    synthesizer.render(left, right);
+
+    try write_pcm(allocator, left, right, "out.pcm");
 
     try stdout.print("========== END ==========\n", .{});
 
     try bw.flush(); // don't forget to flush!
+}
+
+fn write_pcm(allocator: Allocator, left: []f32, right: []f32, path: []const u8) !void
+{
+    var max: f32 = 0.0;
+    {
+        var t: usize = 0;
+        while (t < left.len) : (t += 1)
+        {
+            if (@fabs(left[t]) > max) { max = @fabs(left[t]); }
+            if (@fabs(right[t]) > max) { max = @fabs(right[t]); }
+        }
+    }
+    const a = 0.99 / max;
+
+    var buf: []i16 = try allocator.alloc(i16, 2 * left.len);
+    defer allocator.free(buf);
+    {
+        var t: usize = 0;
+        while (t < left.len) : (t += 1)
+        {
+            const offset = 2 * t;
+            buf[offset + 0] = @floatToInt(i16, a * left[t] * 32768.0);
+            buf[offset + 1] = @floatToInt(i16, a * right[t] * 32768.0);
+        }
+    }
+
+    var pcm = try std.fs.cwd().createFile(path, .{});
+    defer pcm.close();
+    var writer = pcm.writer();
+    try writer.writeAll(@ptrCast([*]u8, buf.ptr)[0..(4 * left.len)]);
 }

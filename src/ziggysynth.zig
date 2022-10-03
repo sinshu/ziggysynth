@@ -16,6 +16,35 @@ const ZiggySynthError = error {
 
 
 
+const ArrayMath = struct
+{
+    fn multiply_add(a: f32, x: []f32, destination: []f32) void
+    {
+        const destination_length = destination.len;
+
+        var i: usize = 0;
+        while (i < destination_length) : (i += 1)
+        {
+            destination[i] += a * x[i];
+        }
+    }
+
+    fn multiply_add_slope(a: f32, step: f32, x: []f32, destination: []f32) void
+    {
+        const destination_length = destination.len;
+        var b = a;
+
+        var i: usize = 0;
+        while (i < destination_length) : (i += 1)
+        {
+            destination[i] += b * x[i];
+            b += step;
+        }
+    }
+};
+
+
+
 const BinaryReader = struct
 {
     fn read(comptime T: type, reader: anytype) !T
@@ -23,73 +52,6 @@ const BinaryReader = struct
         var data: [@sizeOf(T)]u8 = undefined;
         _ = try reader.readNoEof(&data);
         return @bitCast(T, data);
-    }
-};
-
-
-
-const SoundFontMath = struct
-{
-    const HALF_PI: f32 = math.pi / 2;
-    const NON_AUDIBLE: f32 = 1.0E-3;
-    const LOG_NON_AUDIBLE: f32 = @log(1.0E-3);
-
-    fn clamp(value: f32, min: f32, max: f32) f32
-    {
-        if (value < min)
-        {
-            return min;
-        }
-        else if (value > max)
-        {
-            return max;
-        }
-        else
-        {
-            return value;
-        }
-    }
-
-    fn timecentsToSeconds(x: f32) f32
-    {
-        return math.pow(f32, 2.0, (1.0 / 1200.0) * x);
-    }
-
-    fn centsToHertz(x: f32) f32
-    {
-        return 8.176 * math.pow(f32, 2.0, (1.0 / 1200.0) * x);
-    }
-
-    fn centsToMultiplyingFactor(x: f32) f32
-    {
-        return math.pow(f32, 2.0, (1.0 / 1200.0) * x);
-    }
-
-    fn decibelsToLinear(x: f32) f32
-    {
-        return math.pow(f32, 10.0, 0.05 * x);
-    }
-
-    fn linearToDecibels(x: f32) f32
-    {
-        return 20.0 * @log10(x);
-    }
-
-    fn keyNumberToMultiplyingFactor(cents: i32, key: i32) f32
-    {
-        return timecentsToSeconds(@intToFloat(f32, cents * (60 - key)));
-    }
-
-    fn expCutoff(x: f64) f64
-    {
-        if (x < SoundFontMath.LOG_NON_AUDIBLE)
-        {
-            return 0.0;
-        }
-        else
-        {
-            return @exp(x);
-        }
     }
 };
 
@@ -397,6 +359,73 @@ const SoundFontParameters = struct
             .instruments = instruments,
             .instrument_regions = instrument_regions,
         };
+    }
+};
+
+
+
+const SoundFontMath = struct
+{
+    const HALF_PI: f32 = math.pi / 2.0;
+    const NON_AUDIBLE: f32 = 1.0E-3;
+    const LOG_NON_AUDIBLE: f32 = @log(1.0E-3);
+
+    fn clamp(value: f32, min: f32, max: f32) f32
+    {
+        if (value < min)
+        {
+            return min;
+        }
+        else if (value > max)
+        {
+            return max;
+        }
+        else
+        {
+            return value;
+        }
+    }
+
+    fn timecentsToSeconds(x: f32) f32
+    {
+        return math.pow(f32, 2.0, (1.0 / 1200.0) * x);
+    }
+
+    fn centsToHertz(x: f32) f32
+    {
+        return 8.176 * math.pow(f32, 2.0, (1.0 / 1200.0) * x);
+    }
+
+    fn centsToMultiplyingFactor(x: f32) f32
+    {
+        return math.pow(f32, 2.0, (1.0 / 1200.0) * x);
+    }
+
+    fn decibelsToLinear(x: f32) f32
+    {
+        return math.pow(f32, 10.0, 0.05 * x);
+    }
+
+    fn linearToDecibels(x: f32) f32
+    {
+        return 20.0 * @log10(x);
+    }
+
+    fn keyNumberToMultiplyingFactor(cents: i32, key: i32) f32
+    {
+        return timecentsToSeconds(@intToFloat(f32, cents * (60 - key)));
+    }
+
+    fn expCutoff(x: f64) f64
+    {
+        if (x < SoundFontMath.LOG_NON_AUDIBLE)
+        {
+            return 0.0;
+        }
+        else
+        {
+            return @exp(x);
+        }
     }
 };
 
@@ -2051,6 +2080,85 @@ pub const Synthesizer = struct
 
         self.block_read = self.block_size;
     }
+
+    pub fn render(self: *Self, left: []f32, right: []f32) void
+    {
+        if (left.len != right.len)
+        {
+            unreachable;
+        }
+
+        var wrote: usize = 0;
+        while (wrote < left.len)
+        {
+            if (self.block_read == self.block_size)
+            {
+                self.renderBlock();
+                self.block_read = 0;
+            }
+
+            const src_rem = @intCast(usize, self.block_size) - self.block_read;
+            const dst_rem = left.len - wrote;
+            const rem = @minimum(src_rem, dst_rem);
+
+            var t: usize = 0;
+            while (t < rem) : (t += 1)
+            {
+                left[wrote + t] = self.block_left[self.block_read + t];
+                right[wrote + t] = self.block_right[self.block_read + t];
+            }
+
+            self.block_read += rem;
+            wrote += rem;
+        }
+    }
+
+    fn renderBlock(self: *Self) void
+    {
+        self.voices.processUnit(self);
+
+        {
+            var t: usize = 0;
+            var block_size = @intCast(usize, self.block_size);
+            while (t < block_size) : (t += 1)
+            {
+                self.block_left[t] = 0.0;
+                self.block_right[t] = 0.0;
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.voices.active_voice_count) : (i += 1)
+            {
+                const voice = &self.voices.voices[i];
+                const previous_gain_left = self.master_volume * voice.previous_mix_gain_left;
+                const current_gain_left = self.master_volume * voice.current_mix_gain_left;
+                self.writeBlock(previous_gain_left, current_gain_left, voice.block, self.block_left);
+                const previous_gain_right = self.master_volume * voice.previous_mix_gain_right;
+                const current_gain_right = self.master_volume * voice.current_mix_gain_right;
+                self.writeBlock(previous_gain_right, current_gain_right, voice.block, self.block_right);
+            }
+        }
+    }
+
+    fn writeBlock(self: *Self, previous_gain: f32, current_gain: f32, source: []f32, destination: []f32) void
+    {
+        if (@maximum(previous_gain, current_gain) < SoundFontMath.NON_AUDIBLE)
+        {
+            return;
+        }
+
+        if (@fabs(current_gain - previous_gain) < 1.0E-3)
+        {
+            ArrayMath.multiply_add(current_gain, source, destination);
+        }
+        else
+        {
+            const step = self.inverse_block_size * (current_gain - previous_gain);
+            ArrayMath.multiply_add_slope(previous_gain, step, source, destination);
+        }
+    }
 };
 
 
@@ -2494,6 +2602,7 @@ const Voice = struct
 
     voice_state: i32,
     voice_length: i32,
+    minimum_voice_length: i32,
 
     fn init(settings: *const SynthesizerSettings, block: []f32) Self
     {
@@ -2537,6 +2646,7 @@ const Voice = struct
             .smoothed_cutoff = 0.0,
             .voice_state = 0,
             .voice_length = 0,
+            .minimum_voice_length = @divTrunc(settings.sample_rate , 500),
         };
     }
 
@@ -2606,14 +2716,14 @@ const Voice = struct
         self.note_gain = 0.0;
     }
 
-    fn processUnit(self: *Self) bool
+    fn processUnit(self: *Self, synthesizer: *Synthesizer) bool
     {
         if (self.note_gain < SoundFontMath.NON_AUDIBLE)
         {
             return false;
         }
 
-        const channel_info = &self.synthesizer.channels[self.channel];
+        const channel_info = &synthesizer.channels[@intCast(usize, self.channel)];
 
         self.releaseIfNecessary(channel_info);
 
@@ -2622,7 +2732,7 @@ const Voice = struct
             return false;
         }
 
-        self.mod_env.processUnit(self.block_size);
+        _ = self.mod_env.processUnit(self.block_size);
         self.vib_lfo.processUnit();
         self.mod_lfo.processUnit();
 
@@ -2701,7 +2811,7 @@ const Voice = struct
 
     fn releaseIfNecessary(self: *Self, channel_info: *Channel) void
     {
-        if (self.voice_length < self.synthesizer.minimum_voice_length)
+        if (self.voice_length < self.minimum_voice_length)
         {
             return;
         }
@@ -2826,7 +2936,7 @@ const VoiceCollection = struct
         return candidate;
     }
 
-    fn processUnit(self: *Self) void
+    fn processUnit(self: *Self, synthesizer: *Synthesizer) void
     {
         var i: usize = 0;
 
@@ -2837,7 +2947,7 @@ const VoiceCollection = struct
                 return;
             }
 
-            if (self.voices[i].processUnit())
+            if (self.voices[i].processUnit(synthesizer))
             {
                 i += 1;
             }
@@ -2846,8 +2956,8 @@ const VoiceCollection = struct
                 self.active_voice_count -= 1;
 
                 var tmp = self.voices[i];
-                self.voices[i] = self.voices[self.active_voice_count];
-                self.voices[self.active_voice_count] = tmp;
+                self.voices[i] = self.voices[@intCast(usize, self.active_voice_count)];
+                self.voices[@intCast(usize, self.active_voice_count)] = tmp;
             }
         }
     }
@@ -2866,7 +2976,7 @@ const Oscillator = struct
 
     const FRAC_BITS = 24;
     const FRAC_UNIT: i64 = 1 << Oscillator.FRAC_BITS;
-    const FP_TO_SAMPLE: f32 = 1.0 / (32768.0 * Oscillator.FRAC_UNIT);
+    const FP_TO_SAMPLE: f32 = 1.0 / (32768.0 * @intToFloat(f32, Oscillator.FRAC_UNIT));
 
     synthesizer_sample_rate: i32,
 
@@ -2945,7 +3055,7 @@ const Oscillator = struct
 
     fn processUnit(self: *Self, block: []f32, pitch: f32) bool
     {
-        const pitch_change = self.pitch_change_scale * (pitch - self.root_key) + self.tune;
+        const pitch_change = self.pitch_change_scale * (pitch - @intToFloat(f32, self.root_key)) + self.tune;
         const pitch_ratio = self.sample_rate_ratio * math.pow(f32, 2.0, pitch_change / 12.0);
         return self.fillBlock(block, pitch_ratio);
     }
@@ -2967,7 +3077,7 @@ const Oscillator = struct
     fn fillBlock_noLoop(self: *Self, block: []f32, pitch_ratio_fp: i64) bool
     {
         const data_r = self.data.?;
-        const block_length = block.len();
+        const block_length = block.len;
 
         var t: usize = 0;
         while (t < block_length) : (t += 1)
@@ -2994,7 +3104,7 @@ const Oscillator = struct
             const x1 = @intCast(i64, data_r[index]);
             const x2 = @intCast(i64, data_r[index + 1]);
             const a_fp = self.position_fp & (Oscillator.FRAC_UNIT - 1);
-            block[t] = Oscillator.FP_TO_SAMPLE * ((x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
+            block[t] = Oscillator.FP_TO_SAMPLE * @intToFloat(f32, (x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
 
             self.position_fp += pitch_ratio_fp;
         }
@@ -3005,12 +3115,12 @@ const Oscillator = struct
     fn fillBlock_continuous(self: *Self, block: []f32, pitch_ratio_fp: i64) bool
     {
         const data_r = self.data.?;
-        const block_length = block.len();
+        const block_length = block.len;
 
         const end_loop_fp = @intCast(i64, self.end_loop) << Oscillator.FRAC_BITS;
 
-        const loop_length = @intCast(i64, self.end_loop - self.start_loop);
-        const loop_length_fp = loop_length << Oscillator.FRAC_BITS;
+        const loop_length = @intCast(usize, self.end_loop - self.start_loop);
+        const loop_length_fp = @intCast(i64, loop_length) << Oscillator.FRAC_BITS;
 
         var t: usize = 0;
         while (t < block_length) : (t += 1)
@@ -3031,7 +3141,7 @@ const Oscillator = struct
             const x1 = @intCast(i64, data_r[index1]);
             const x2 = @intCast(i64, data_r[index2]);
             const a_fp = self.position_fp & (Oscillator.FRAC_UNIT - 1);
-            block[t] = Oscillator.FP_TO_SAMPLE * ((x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
+            block[t] = Oscillator.FP_TO_SAMPLE * @intToFloat(f32, (x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
 
             self.position_fp += pitch_ratio_fp;
         }
@@ -3513,7 +3623,7 @@ const Lfo = struct
             return;
         }
 
-        self.processed_sample_count += self.synthesizer.block_size;
+        self.processed_sample_count += self.block_size;
 
         const current_time = @intToFloat(f64, self.processed_sample_count) / @intToFloat(f64, self.sample_rate);
 
@@ -3523,18 +3633,18 @@ const Lfo = struct
         }
         else
         {
-            const phase = ((current_time - self.delay) % self.period) / self.period;
+            const phase = @mod((current_time - self.delay) , self.period) / self.period;
             if (phase < 0.25)
             {
-                self.value = (4.0 * phase);
+                self.value = @floatCast(f32, 4.0 * phase);
             }
             else if (phase < 0.75)
             {
-                self.value = (4.0 * (0.5 - phase));
+                self.value = @floatCast(f32, 4.0 * (0.5 - phase));
             }
             else
             {
-                self.value = (4.0 * (phase - 1.0));
+                self.value = @floatCast(f32, 4.0 * (phase - 1.0));
             }
         }
     }
@@ -3756,12 +3866,12 @@ const Channel = struct
 
     fn getModulation(self: *const Self) f32
     {
-        return (50.0 / 16383.0) * self.modulation;
+        return (50.0 / 16383.0) * @intToFloat(f32, self.modulation);
     }
 
     fn getVolume(self: *const Self) f32
     {
-        return (1.0 / 16383.0) * self.volume;
+        return (1.0 / 16383.0) * @intToFloat(f32, self.volume);
     }
 
     fn getPan(self: *const Self) f32
@@ -3801,6 +3911,6 @@ const Channel = struct
 
     fn getPitchBend(self: *const Self) f32
     {
-        return self.get_pitch_bend_range() * self.pitch_bend;
+        return self.getPitchBendRange() * self.pitch_bend;
     }
 };
