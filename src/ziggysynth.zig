@@ -70,7 +70,7 @@ const BinaryReader = struct
 
         while (true)
         {
-            const value = try @intCast(i32, BinaryReader.read(u8, reader));
+            const value = @intCast(i32, try BinaryReader.read(u8, reader));
             acc = (acc << 7) | (value & 127);
             if ((value & 128) == 0)
             {
@@ -4034,7 +4034,7 @@ pub const MidiFile = struct
     messages: []Message,
     times: []f64,
 
-    fn init(allocator: Allocator, reader: anytype) !Self
+    pub fn init(allocator: Allocator, reader: anytype) !Self
     {
         const chunk_type = try BinaryReader.read([4]u8, reader);
         if (!mem.eql(u8, &chunk_type, "MThd"))
@@ -4054,15 +4054,15 @@ pub const MidiFile = struct
             return ZiggySynthError.InvalidMidiFile;
         }
 
-        const track_count = @intCast(usize, BinaryReader.readBigEndian(i16, reader));
-        const resolution = @intCast(i32, BinaryReader.readBigEndian(i16, reader));
+        const track_count = @intCast(usize, try BinaryReader.readBigEndian(i16, reader));
+        const resolution = @intCast(i32, try BinaryReader.readBigEndian(i16, reader));
 
         if (track_count > MidiFile.MAX_TRACK_COUNT)
         {
             return ZiggySynthError.InvalidMidiFile;
         }
 
-        var message_lists = mem.zeroes([MidiFile.MAX_TRACK_COUNT]ArrayList(Message));
+        var message_lists: [MidiFile.MAX_TRACK_COUNT]ArrayList(Message) = undefined;
         {
             var i: usize = 0;
             while (i < track_count) : (i += 1)
@@ -4079,12 +4079,12 @@ pub const MidiFile = struct
             }
         }
 
-        var tick_lists = mem.zeroes([MidiFile.MAX_TRACK_COUNT]ArrayList(i32));
+        var tick_lists: [MidiFile.MAX_TRACK_COUNT]ArrayList(i32) = undefined;
         {
             var i: usize = 0;
             while (i < track_count) : (i += 1)
             {
-                tick_lists[i] = ArrayList(Message).init(allocator);
+                tick_lists[i] = ArrayList(i32).init(allocator);
             }
         }
         defer
@@ -4100,20 +4100,20 @@ pub const MidiFile = struct
             var i: usize = 0;
             while (i < track_count) : (i += 1)
             {
-                try MidiFile.read_track(reader, &message_lists[i], &tick_lists[i]);
+                try MidiFile.readTrack(reader, &message_lists[i], &tick_lists[i]);
             }
         }
 
-        return try MidiFile.merge_tracks(allocator, message_lists[0..track_count], tick_lists[0..track_count], resolution);
+        return try MidiFile.mergeTracks(allocator, message_lists[0..track_count], tick_lists[0..track_count], resolution);
     }
 
-    fn deinit(self: *Self) void
+    pub fn deinit(self: *Self) void
     {
         self.allocator.free(self.times);
         self.allocator.free(self.messages);
     }
 
-    fn read_track(reader: anytype, messages: *ArrayList(Message), ticks: *ArrayList(i32)) !void
+    fn readTrack(reader: anytype, messages: *ArrayList(Message), ticks: *ArrayList(i32)) !void
     {
         const chunk_type = try BinaryReader.read([4]u8, reader);
         if (!mem.eql(u8, &chunk_type, "MTrk"))
@@ -4159,7 +4159,7 @@ pub const MidiFile = struct
                     {
                         0x2F =>
                         {
-                            try BinaryReader.read(u8, reader);
+                            _ = try BinaryReader.read(u8, reader);
                             try messages.append(Message.endOfTrack());
                             try ticks.append(tick);
                             return;
@@ -4171,7 +4171,7 @@ pub const MidiFile = struct
                         },
                         else => try MidiFile.discardData(reader),
                     },
-                _ =>
+                else =>
                 {
                     const command = first & 0xF0;
                     if (command == 0xC0 or command == 0xD0)
@@ -4184,8 +4184,8 @@ pub const MidiFile = struct
                     {
                         const data1 = try BinaryReader.read(u8, reader);
                         const data2 = try BinaryReader.read(u8, reader);
-                        messages.append(Message.common2(first, data1, data2));
-                        ticks.append(tick);
+                        try messages.append(Message.common2(first, data1, data2));
+                        try ticks.append(tick);
                     }
                 },
             }
@@ -4211,15 +4211,15 @@ pub const MidiFile = struct
 
         while (true)
         {
-            var min_tick = math.maxInt(i32);
+            var min_tick: i32 = math.maxInt(i32);
             var min_index: i32 = -1;
 
             var ch: usize = 0;
             while (ch < tick_lists.len) : (ch += 1)
             {
-                if (indices[ch] < tick_lists[ch].len)
+                if (indices[ch] < tick_lists[ch].items.len)
                 {
-                    const tick = tick_lists[ch][indices[ch]];
+                    const tick = tick_lists[ch].items[indices[ch]];
                     if (tick < min_tick)
                     {
                         min_tick = tick;
@@ -4233,22 +4233,22 @@ pub const MidiFile = struct
                 break;
             }
 
-            const next_tick = tick_lists[@intCast(usize, min_index)][indices[@intCast(usize, min_index)]];
+            const next_tick = tick_lists[@intCast(usize, min_index)].items[indices[@intCast(usize, min_index)]];
             const delta_tick = next_tick - current_tick;
             const delta_time = 60.0 / (@intToFloat(f64, resolution) * tempo) * @intToFloat(f64, delta_tick);
 
             current_tick += delta_tick;
             current_time += delta_time;
 
-            const message = message_lists[@intCast(usize, min_index)][indices[@intCast(usize, min_index)]];
+            const message = message_lists[@intCast(usize, min_index)].items[indices[@intCast(usize, min_index)]];
             if (message.getMessageType() == Message.TEMPO_CHANGE)
             {
                 tempo = message.getTempo();
             }
             else
             {
-                merged_messages.append(message);
-                merged_times.append(current_time);
+                try merged_messages.append(message);
+                try merged_times.append(current_time);
             }
 
             indices[@intCast(usize, min_index)] += 1;
@@ -4277,11 +4277,11 @@ pub const MidiFile = struct
 
     fn discardData(reader: anytype) !void
     {
-        const size = try BinaryReader.readIntVariableLength(reader);
+        const size = @intCast(usize, try BinaryReader.readIntVariableLength(reader));
         try reader.skipBytes(size, .{});
     }
 
-    fn readRempo(reader: anytype) !i32
+    fn readTempo(reader: anytype) !i32
     {
         const size = try BinaryReader.readIntVariableLength(reader);
         if (size != 3)
@@ -4289,9 +4289,9 @@ pub const MidiFile = struct
             return ZiggySynthError.InvalidMidiFile;
         }
 
-        const b1 = try BinaryReader.read(u8, reader);
-        const b2 = try BinaryReader.read(u8, reader);
-        const b3 = try BinaryReader.read(u8, reader);
+        const b1 = @intCast(i32, try BinaryReader.read(u8, reader));
+        const b2 = @intCast(i32, try BinaryReader.read(u8, reader));
+        const b3 = @intCast(i32, try BinaryReader.read(u8, reader));
 
         return ((b1 << 16) | (b2 << 8) | b3);
     }

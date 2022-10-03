@@ -15,6 +15,11 @@ pub fn main() !void
     var sf = try ziggysynth.SoundFont.init(allocator, file.reader());
     defer sf.deinit();
 
+    var mid = try std.fs.cwd().openFile("flourish.mid", .{});
+    defer mid.close();
+    var midifile = try ziggysynth.MidiFile.init(allocator, mid.reader());
+    defer midifile.deinit();
+
     // stdout is for the actual output of your application, for example if you
     // are implementing gzip, then only the compressed bytes should be sent to
     // stdout, not any debugging messages.
