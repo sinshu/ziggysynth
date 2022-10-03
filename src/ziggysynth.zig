@@ -3082,7 +3082,7 @@ const Oscillator = struct
         var t: usize = 0;
         while (t < block_length) : (t += 1)
         {
-            const index = @intCast(usize, self.position_fp >> Oscillator.FRAC_BITS);
+            const index = @bitCast(usize, self.position_fp >> Oscillator.FRAC_BITS);
 
             if (index >= self.end)
             {
@@ -3130,7 +3130,7 @@ const Oscillator = struct
                 self.position_fp -= loop_length_fp;
             }
 
-            const index1 = @intCast(usize, self.position_fp >> Oscillator.FRAC_BITS);
+            const index1 = @bitCast(usize, self.position_fp >> Oscillator.FRAC_BITS);
             var index2 = index1 + 1;
 
             if (index2 >= self.end_loop)
@@ -3758,42 +3758,42 @@ const Channel = struct
 
     fn setModulationCoarse(self: *Self, value: i32) void
     {
-        self.modulation = @intCast(i16, (@intCast(i32, self.modulation) & 0x7F) | (value << 7));
+        self.modulation = @truncate(i16, (@intCast(i32, self.modulation) & 0x7F) | (value << 7));
     }
 
     fn setModulationFine(self: *Self, value: i32) void
     {
-        self.modulation = @intCast(i16, (@intCast(i32, self.modulation) & 0xFF80) | value);
+        self.modulation = @truncate(i16, (@intCast(i32, self.modulation) & 0xFF80) | value);
     }
 
     fn setVolumeCoarse(self: *Self, value: i32) void
     {
-        self.volume = @intCast(i16, (@intCast(i32, self.volume) & 0x7F) | (value << 7));
+        self.volume = @truncate(i16, (@intCast(i32, self.volume) & 0x7F) | (value << 7));
     }
 
     fn setVolumeFine(self: *Self, value: i32) void
     {
-        self.volume = @intCast(i16, (@intCast(i32, self.volume) & 0xFF80) | value);
+        self.volume = @truncate(i16, (@intCast(i32, self.volume) & 0xFF80) | value);
     }
 
     fn setPanCoarse(self: *Self, value: i32) void
     {
-        self.pan = @intCast(i16, (@intCast(i32, self.pan) & 0x7F) | (value << 7));
+        self.pan = @truncate(i16, (@intCast(i32, self.pan) & 0x7F) | (value << 7));
     }
 
     fn setPanFine(self: *Self, value: i32) void
     {
-        self.pan = @intCast(i16, (@intCast(i32, self.pan) & 0xFF80) | value);
+        self.pan = @truncate(i16, (@intCast(i32, self.pan) & 0xFF80) | value);
     }
 
     fn setExpressionCoarse(self: *Self, value: i32) void
     {
-        self.expression = @intCast(i16, (@intCast(i32, self.expression) & 0x7F) | (value << 7));
+        self.expression = @truncate(i16, (@intCast(i32, self.expression) & 0x7F) | (value << 7));
     }
 
     fn setExpressionFine(self: *Self, value: i32) void
     {
-        self.expression = @intCast(i16, (@intCast(i32, self.expression) & 0xFF80) | value);
+        self.expression = @truncate(i16, (@intCast(i32, self.expression) & 0xFF80) | value);
     }
 
     fn setHoldPedal(self: *Self, value: i32) void
@@ -3803,37 +3803,37 @@ const Channel = struct
 
     fn setReverbSend(self: *Self, value: i32) void
     {
-        self.reverb_send = @intCast(u8, value);
+        self.reverb_send = @truncate(u8, @bitCast(u32, value));
     }
 
     fn setChorusSend(self: *Self, value: i32) void
     {
-        self.chorus_send = @intCast(u8, value);
+        self.chorus_send = @truncate(u8, @bitCast(u32, value));
     }
 
     fn setRpnCoarse(self: *Self, value: i32) void
     {
-        self.rpn = @intCast(i16, (@intCast(i32, self.rpn) & 0x7F) | (value << 7));
+        self.rpn = @truncate(i16, (@intCast(i32, self.rpn) & 0x7F) | (value << 7));
     }
 
     fn setRpnFine(self: *Self, value: i32) void
     {
-        self.rpn = @intCast(i16, (@intCast(i32, self.rpn) & 0xFF80) | value);
+        self.rpn = @truncate(i16, (@intCast(i32, self.rpn) & 0xFF80) | value);
     }
 
     fn dataEntryCoarse(self: *Self, value: i32) void
     {
         if (self.rpn == 0)
         {
-            self.pitch_bend_range = @intCast(i16, (@intCast(i32, self.pitch_bend_range) & 0x7F) | (value << 7));
+            self.pitch_bend_range = @truncate(i16, (@intCast(i32, self.pitch_bend_range) & 0x7F) | (value << 7));
         }
         else if (self.rpn == 1)
         {
-            self.fine_tune = @intCast(i16, (@intCast(i32, self.fine_tune) & 0x7F) | (value << 7));
+            self.fine_tune = @truncate(i16, (@intCast(i32, self.fine_tune) & 0x7F) | (value << 7));
         }
         else if (self.rpn == 2)
         {
-            self.coarse_tune = @intCast(i16, value - 64);
+            self.coarse_tune = @truncate(i16, value - 64);
         }
     }
 
@@ -3841,11 +3841,11 @@ const Channel = struct
     {
         if (self.rpn == 0)
         {
-            self.pitch_bend_range = @intCast(i16, (@intCast(i32, self.pitch_bend_range) & 0xFF80) | value);
+            self.pitch_bend_range = @truncate(i16, (@intCast(i32, self.pitch_bend_range) & 0xFF80) | value);
         }
         else if (self.rpn == 1)
         {
-            self.fine_tune = @intCast(i16, (@intCast(i32, self.fine_tune) & 0xFF80) | value);
+            self.fine_tune = @truncate(i16, (@intCast(i32, self.fine_tune) & 0xFF80) | value);
         }
     }
 
