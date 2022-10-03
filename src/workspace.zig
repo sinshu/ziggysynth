@@ -33,19 +33,20 @@ pub fn main() !void
     var synthesizer = try ziggysynth.Synthesizer.init(allocator, sf, settings);
     defer synthesizer.deinit();
 
+    var sequencer = try ziggysynth.MidiFileSequencer.init(allocator, synthesizer);
+    defer sequencer.deinit();
+
     // Play some notes (middle C, E, G).
-    synthesizer.noteOn(0, 60, 100);
-    synthesizer.noteOn(0, 64, 100);
-    synthesizer.noteOn(0, 67, 100);
+    sequencer.play(midifile, false);
 
     // The output buffer (3 seconds).
-    const sample_count = 3 * @intCast(usize, settings.sample_rate);
+    const sample_count = @floatToInt(usize, @intToFloat(f64, settings.sample_rate) * midifile.getLength());
     var left: []f32 = try allocator.alloc(f32, sample_count);
     defer allocator.free(left);
     var right: []f32 = try allocator.alloc(f32, sample_count);
     defer allocator.free(right);
 
-    synthesizer.render(left, right);
+    sequencer.render(left, right);
 
     try write_pcm(allocator, left, right, "out.pcm");
 

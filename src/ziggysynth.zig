@@ -1840,6 +1840,7 @@ pub const Synthesizer = struct
         const minimum_voice_length = @divTrunc(settings.sample_rate, 500);
 
         var preset_lookup: AutoHashMap(i32, *Preset) = AutoHashMap(i32, *Preset).init(allocator);
+        errdefer preset_lookup.deinit();
         var min_preset_id: i32 = math.maxInt(i32);
         var default_preset: ?*Preset = null;
         {
@@ -1873,10 +1874,14 @@ pub const Synthesizer = struct
             }
         }
 
-        const voices = try VoiceCollection.init(allocator, &settings);
+        var voices = try VoiceCollection.init(allocator, &settings);
+        errdefer voices.deinit();
 
         const block_left = try allocator.alloc(f32, @intCast(usize, settings.block_size));
+        errdefer allocator.free(block_left);
+
         const block_right = try allocator.alloc(f32, @intCast(usize, settings.block_size));
+        errdefer allocator.free(block_right);
 
         const inverse_block_size = 1.0 / @intToFloat(f32, settings.block_size);
 
@@ -2110,7 +2115,7 @@ pub const Synthesizer = struct
             self.channels[i].reset();
         }
 
-        self.block_read = self.block_size;
+        self.block_read = @intCast(usize, self.block_size);
     }
 
     pub fn render(self: *Self, left: []f32, right: []f32) void
@@ -2992,6 +2997,11 @@ const VoiceCollection = struct
                 self.voices[@intCast(usize, self.active_voice_count)] = tmp;
             }
         }
+    }
+
+    fn clear(self: *Self) void
+    {
+        self.active_voice_count = 0;
     }
 };
 
@@ -4294,5 +4304,138 @@ pub const MidiFile = struct
         const b3 = @intCast(i32, try BinaryReader.read(u8, reader));
 
         return ((b1 << 16) | (b2 << 8) | b3);
+    }
+
+    pub fn getLength(self: *const Self) f64
+    {
+        return self.times[self.times.len - 1];
+    }
+};
+
+
+
+pub const MidiFileSequencer = struct
+{
+    const Self = @This();
+
+    allocator: Allocator,
+
+    synthesizer: Synthesizer,
+
+    midi_file: ?MidiFile,
+    play_loop: bool,
+
+    block_wrote: usize,
+
+    current_time: f64,
+    msg_index: usize,
+
+    block_left: []f32,
+    block_right: []f32,
+
+    pub fn init(allocator: Allocator, synthesizer: Synthesizer) !Self
+    {
+        const block_left = try allocator.alloc(f32, @intCast(usize, synthesizer.block_size));
+        errdefer allocator.free(block_left);
+
+        const block_right = try allocator.alloc(f32, @intCast(usize, synthesizer.block_size));
+        errdefer allocator.free(block_right);
+
+        return Self
+        {
+            .allocator = allocator,
+            .synthesizer = synthesizer,
+            .midi_file = null,
+            .play_loop = false,
+            .block_wrote = 0,
+            .current_time = 0.0,
+            .msg_index = 0,
+            .block_left = block_left,
+            .block_right = block_right,
+        };
+    }
+
+    pub fn deinit(self: *Self) void
+    {
+        self.allocator.free(self.block_right);
+        self.allocator.free(self.block_left);
+    }
+
+    pub fn play(self: *Self, midi_file: MidiFile, play_loop: bool) void
+    {
+        self.midi_file = midi_file;
+        self.play_loop = play_loop;
+
+        self.block_wrote = @intCast(usize, self.synthesizer.block_size);
+
+        self.current_time = 0.0;
+        self.msg_index = 0;
+
+        self.synthesizer.reset();
+    }
+
+    pub fn stop(self: *Self) void
+    {
+        self.midi_file = null;
+        self.synthesizer.reset();
+    }
+
+    pub fn render(self: *Self, left: []f32, right: []f32) void
+    {
+        if (left.len != right.len)
+        {
+            unreachable;
+        }
+
+        var wrote: usize = 0;
+        while (wrote < left.len)
+        {
+            if (self.block_wrote == @intCast(usize, self.synthesizer.block_size))
+            {
+                self.processEvents();
+                self.block_wrote = 0;
+                self.current_time += @intToFloat(f64, self.synthesizer.block_size) / @intToFloat(f64, self.synthesizer.sample_rate);
+            }
+
+            const src_rem = @intCast(usize, self.synthesizer.block_size) - self.block_wrote;
+            const dst_rem = left.len - wrote;
+            const rem = @minimum(src_rem, dst_rem);
+
+            self.synthesizer.render(left[wrote..(wrote + rem)], right[wrote..(wrote + rem)]);
+
+            self.block_wrote += rem;
+            wrote += rem;
+        }
+    }
+
+    fn processEvents(self: *Self) void
+    {
+        const midi_file_r = self.midi_file orelse return;
+
+        while (self.msg_index < midi_file_r.messages.len)
+        {
+            const time = midi_file_r.times[self.msg_index];
+            const msg = midi_file_r.messages[self.msg_index];
+
+            if (time <= self.current_time)
+            {
+                if (msg.getMessageType() == Message.NORMAL)
+                {
+                    self.synthesizer.processMidiMessage(@intCast(i32, msg.channel), @intCast(i32, msg.command), @intCast(i32, msg.data1), @intCast(i32, msg.data2));
+                }
+                self.msg_index += 1;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        if (self.msg_index == midi_file_r.messages.len and self.play_loop)
+        {
+            self.current_time = 0.0;
+            self.msg_index = 0;
+            self.synthesizer.noteOffAll(false);
+        }
     }
 };
