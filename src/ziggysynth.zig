@@ -2,12 +2,14 @@ const std = @import("std");
 const math = std.math;
 const mem = std.mem;
 const Allocator = mem.Allocator;
+const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
 
 
 
 const ZiggySynthError = error {
     InvalidSoundFont,
+    InvalidMidiFile,
     SampleRateIsOutOfRange,
     BlockSizeIfOutOfRange,
     MaximumPolyphonyIsOutOfRange,
@@ -52,6 +54,13 @@ const BinaryReader = struct
         var data: [@sizeOf(T)]u8 = undefined;
         _ = try reader.readNoEof(&data);
         return @bitCast(T, data);
+    }
+
+    fn readBigEndian(comptime T: type, reader: anytype) !T
+    {
+        var data: [@sizeOf(T)]u8 = undefined;
+        _ = try reader.readNoEof(&data);
+        return @byteSwap(@bitCast(T, data));
     }
 };
 
@@ -3912,5 +3921,165 @@ const Channel = struct
     fn getPitchBend(self: *const Self) f32
     {
         return self.getPitchBendRange() * self.pitch_bend;
+    }
+};
+
+
+
+const Message = struct
+{
+    const Self = @This();
+
+    channel: u8,
+    command: u8,
+    data1: u8,
+    data2: u8,
+
+    const NORMAL: u8 = 0;
+    const TEMPO_CHANGE: u8 = 252;
+    const END_OF_TRACK: u8 = 255;
+
+    fn common1(status: u8, data1:u8) Self
+    {
+        return Self
+        {
+            .channel = status & 0x0F,
+            .command = status & 0xF0,
+            .data1 = data1,
+            .data2 = 0,
+        };
+    }
+
+    fn common2(status: u8, data1:u8, data2: u8) Self
+    {
+        return Self
+        {
+            .channel = status & 0x0F,
+            .command = status & 0xF0,
+            .data1 = data1,
+            .data2 = data2,
+        };
+    }
+
+    fn tempoChange(tempo: i32) Self
+    {
+        return Self
+        {
+            .channel = Message.TEMPO_CHANGE,
+            .command = @truncate(u8, @bitCast(u32, (tempo >> 16))),
+	        .data1 = @truncate(u8, @bitCast(u32, (tempo >> 8))),
+	        .data2 = @truncate(u8, @bitCast(u32, tempo)),
+        };
+    }
+
+    fn endOfTrack() Self
+    {
+        return Self
+        {
+            .channel = Message.END_OF_TRACK,
+            .command = 0,
+            .data1 = 0,
+            .data2 = 0,
+        };
+    }
+
+    fn getMessageType(self: *const Self) u8
+    {
+        return switch (self.channel)
+        {
+            Message.TEMPO_CHANGE => Message.TEMPO_CHANGE,
+            Message.END_OF_TRACK => Message.END_OF_TRACK,
+            else => Message.NORMAL,
+        };
+    }
+
+    fn getTempo(self: *const Self) f64
+    {
+        return 60000000.0 / @intToFloat(f64, (@intCast(i32, self.command) << 16) | (@intCast(i32, self.data1) << 8) | @intCast(i32, self.data2));
+    }
+};
+
+
+
+pub const MidiFile = struct
+{
+    const Self = @This();
+
+    const MAX_TRACK_COUNT: usize = 32;
+
+    messages: []Message,
+    times: []f64,
+
+    fn init(allocator: Allocator, reader: anytype) !Self
+    {
+        const chunk_type = try BinaryReader.read([4]u8, reader);
+        if (!mem.eql(u8, &chunk_type, "MThd"))
+        {
+            return ZiggySynthError.InvalidMidiFile;
+        }
+
+        const size = try BinaryReader.readBigEndian(i32, reader);
+        if (size != 6)
+        {
+            return ZiggySynthError.InvalidMidiFile;
+        }
+
+        const format = try BinaryReader.readBigEndian(i16, reader);
+        if (!(format == 0 or format == 1))
+        {
+            return ZiggySynthError.InvalidMidiFile;
+        }
+
+        const track_count = @intCast(usize, BinaryReader.readBigEndian(i16, reader));
+        const resolution = BinaryReader.readBigEndian(i16, reader);
+
+        if (track_count > MidiFile.MAX_TRACK_COUNT)
+        {
+            return ZiggySynthError.InvalidMidiFile;
+        }
+
+        var message_lists = mem.zeroes([MidiFile.MAX_TRACK_COUNT]ArrayList(Message));
+        {
+            var i: usize = 0;
+            while (i < track_count) : (i += 1)
+            {
+                message_lists[i] = ArrayList(Message).init(allocator);
+            }
+        }
+        defer
+        {
+            var i: usize = 0;
+            while (i < track_count) : (i += 1)
+            {
+                message_lists[i].deinit();
+            }
+        }
+
+        var tick_lists = mem.zeroes([MidiFile.MAX_TRACK_COUNT]ArrayList(i32));
+        {
+            var i: usize = 0;
+            while (i < track_count) : (i += 1)
+            {
+                tick_lists[i] = ArrayList(Message).init(allocator);
+            }
+        }
+        defer
+        {
+            var i: usize = 0;
+            while (i < track_count) : (i += 1)
+            {
+                tick_lists[i].deinit();
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < track_count) : (i += 1)
+            {
+                try MidiFile.read_track(reader, &message_lists[i], &tick_lists[i]);
+            }
+        }
+
+        return try MidiFile.merge_tracks(allocator, &message_lists, &tick_lists, resolution);
     }
 };
