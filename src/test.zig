@@ -132,7 +132,7 @@ fn write_pcm(allocator: Allocator, left: []f32, right: []f32, path: []const u8) 
         }
     }
 
-    var pcm = try std.fs.cwd().createFile(path, .{});
+    var pcm = try fs.cwd().createFile(path, .{});
     defer pcm.close();
     var writer = pcm.writer();
     try writer.writeAll(@ptrCast([*]u8, buf.ptr)[0..(4 * left.len)]);
