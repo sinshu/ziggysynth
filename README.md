@@ -86,7 +86,7 @@ sequencer.render(left, right);
 
 ## Performance
 
-Below is a comparison of the time it took to render a MIDI file in several languages. The MIDI file is [flourish.mid](https://midis.fandom.com/wiki/Flourish) (90 seconds) and the SoundFont used is [TimGM6mb.sf2](https://musescore.org/en/handbook/3/soundfonts-and-sfz-files#gm_soundfonts).
+Below is a comparison of the time it took to render a MIDI file in several languages. The MIDI file is [flourish.mid](https://midis.fandom.com/wiki/Flourish) (90 seconds) and the SoundFont used is [TimGM6mb.sf2](https://musescore.org/en/handbook/3/soundfonts-and-sfz-files#gm_soundfonts). Zig is the fastest so far!
 
 ![Zig is the fastest!](media/20221004_rendering_time.png)
 
