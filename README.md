@@ -1,6 +1,6 @@
 # ZiggySynth
 
-ZiggySynth is a SoundFont MIDI synthesizer written in pure Rust, ported from [MeltySynth for C#](https://github.com/sinshu/meltysynth).
+ZiggySynth is a SoundFont MIDI synthesizer written in pure Zig, ported from [MeltySynth for C#](https://github.com/sinshu/meltysynth).
 
 
 
