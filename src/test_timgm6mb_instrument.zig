@@ -4,10 +4,8 @@ const ziggysynth = @import("ziggysynth.zig");
 const SoundFont = ziggysynth.SoundFont;
 const InstrumentRegion = ziggysynth.InstrumentRegion;
 
-fn areEqual(x: f64, y: f64) bool
-{
-    if (@floor(x) == @ceil(x) and @floor(y) == @ceil(y))
-    {
+fn areEqual(x: f64, y: f64) bool {
+    if (@floor(x) == @ceil(x) and @floor(y) == @ceil(y)) {
         return x == y;
     }
 
@@ -18,8 +16,7 @@ fn areEqual(x: f64, y: f64) bool
     return delta < limit;
 }
 
-fn check(region: *const InstrumentRegion, values: *const [50]f64) void
-{
+fn check(region: *const InstrumentRegion, values: *const [50]f64) void {
     debug.assert(areEqual(@intToFloat(f64, region.getSampleStart()), values[0]));
     debug.assert(areEqual(@intToFloat(f64, region.getSampleEnd()), values[1]));
     debug.assert(areEqual(@intToFloat(f64, region.getSampleStartLoop()), values[2]));
@@ -72,8 +69,7 @@ fn check(region: *const InstrumentRegion, values: *const [50]f64) void
     debug.assert(areEqual(@intToFloat(f64, region.getRootKey()), values[49]));
 }
 
-test "TimGM6mb Instrument"
-{
+test "TimGM6mb Instrument" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer debug.assert(!gpa.deinit());

@@ -4,10 +4,8 @@ const ziggysynth = @import("ziggysynth.zig");
 const SoundFont = ziggysynth.SoundFont;
 const PresetRegion = ziggysynth.PresetRegion;
 
-fn areEqual(x: f64, y: f64) bool
-{
-    if (@floor(x) == @ceil(x) and @floor(y) == @ceil(y))
-    {
+fn areEqual(x: f64, y: f64) bool {
+    if (@floor(x) == @ceil(x) and @floor(y) == @ceil(y)) {
         return x == y;
     }
 
@@ -18,8 +16,7 @@ fn areEqual(x: f64, y: f64) bool
     return delta < limit;
 }
 
-fn check(region: *const PresetRegion, values: *const [39]f64) void
-{
+fn check(region: *const PresetRegion, values: *const [39]f64) void {
     debug.assert(areEqual(@intToFloat(f64, region.getModulationLfoToPitch()), values[0]));
     debug.assert(areEqual(@intToFloat(f64, region.getVibratoLfoToPitch()), values[1]));
     debug.assert(areEqual(@intToFloat(f64, region.getModulationEnvelopeToPitch()), values[2]));
@@ -61,8 +58,7 @@ fn check(region: *const PresetRegion, values: *const [39]f64) void
     debug.assert(areEqual(@intToFloat(f64, region.getScaleTuning()), values[38]));
 }
 
-test "MuseScore Preset"
-{
+test "MuseScore Preset" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer debug.assert(!gpa.deinit());

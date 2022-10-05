@@ -12,8 +12,7 @@ const SynthesizerSettings = ziggysynth.SynthesizerSettings;
 const MidiFile = ziggysynth.MidiFile;
 const MidiFileSequencer = ziggysynth.MidiFileSequencer;
 
-pub fn main() !void
-{
+pub fn main() !void {
     const stdout_file = io.getStdOut().writer();
     var bw = io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
@@ -35,8 +34,7 @@ pub fn main() !void
     try bw.flush();
 }
 
-fn simple_chord(allocator: Allocator) !void
-{
+fn simple_chord(allocator: Allocator) !void {
     // Load the SoundFont.
     var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
     defer sf2.close();
@@ -67,8 +65,7 @@ fn simple_chord(allocator: Allocator) !void
     try write_pcm(allocator, left, right, "simple_chord.pcm");
 }
 
-fn flourish(allocator: Allocator) !void
-{
+fn flourish(allocator: Allocator) !void {
     // Load the SoundFont.
     var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
     defer sf2.close();
@@ -107,15 +104,17 @@ fn flourish(allocator: Allocator) !void
     try write_pcm(allocator, left, right, "flourish.pcm");
 }
 
-fn write_pcm(allocator: Allocator, left: []f32, right: []f32, path: []const u8) !void
-{
+fn write_pcm(allocator: Allocator, left: []f32, right: []f32, path: []const u8) !void {
     var max: f32 = 0.0;
     {
         var t: usize = 0;
-        while (t < left.len) : (t += 1)
-        {
-            if (@fabs(left[t]) > max) { max = @fabs(left[t]); }
-            if (@fabs(right[t]) > max) { max = @fabs(right[t]); }
+        while (t < left.len) : (t += 1) {
+            if (@fabs(left[t]) > max) {
+                max = @fabs(left[t]);
+            }
+            if (@fabs(right[t]) > max) {
+                max = @fabs(right[t]);
+            }
         }
     }
     const a = 0.99 / max;
@@ -124,8 +123,7 @@ fn write_pcm(allocator: Allocator, left: []f32, right: []f32, path: []const u8) 
     defer allocator.free(buf);
     {
         var t: usize = 0;
-        while (t < left.len) : (t += 1)
-        {
+        while (t < left.len) : (t += 1) {
             const offset = 2 * t;
             buf[offset + 0] = @floatToInt(i16, a * left[t] * 32768.0);
             buf[offset + 1] = @floatToInt(i16, a * right[t] * 32768.0);
@@ -138,8 +136,7 @@ fn write_pcm(allocator: Allocator, left: []f32, right: []f32, path: []const u8) 
     try writer.writeAll(@ptrCast([*]u8, buf.ptr)[0..(4 * left.len)]);
 }
 
-test
-{
+test {
     _ = @import("test_timgm6mb_sample.zig");
     _ = @import("test_timgm6mb_preset.zig");
     _ = @import("test_timgm6mb_instrument.zig");
