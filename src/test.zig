@@ -41,7 +41,7 @@ fn simple_chord(allocator: Allocator) !void {
     var sound_font = try SoundFont.init(allocator, sf2.reader());
     defer sound_font.deinit();
 
-    // /Create the synthesizer.
+    // Create the synthesizer.
     var settings = SynthesizerSettings.init(44100);
     var synthesizer = try Synthesizer.init(allocator, sound_font, settings);
     defer synthesizer.deinit();
