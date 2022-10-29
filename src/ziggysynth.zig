@@ -1764,7 +1764,7 @@ pub const Synthesizer = struct {
 
             const src_rem = @intCast(usize, self.block_size) - self.block_read;
             const dst_rem = left.len - wrote;
-            const rem = @minimum(src_rem, dst_rem);
+            const rem = @min(src_rem, dst_rem);
 
             var t: usize = 0;
             while (t < rem) : (t += 1) {
@@ -1804,7 +1804,7 @@ pub const Synthesizer = struct {
     }
 
     fn writeBlock(self: *Self, previous_gain: f32, current_gain: f32, source: []f32, destination: []f32) void {
-        if (@maximum(previous_gain, current_gain) < SoundFontMath.NON_AUDIBLE) {
+        if (@max(previous_gain, current_gain) < SoundFontMath.NON_AUDIBLE) {
             return;
         }
 
@@ -2088,7 +2088,7 @@ const RegionEx = struct {
         const hold = region.getHoldVolumeEnvelope() * SoundFontMath.keyNumberToMultiplyingFactor(region.getKeyNumberToVolumeEnvelopeHold(), key);
         const decay = region.getDecayVolumeEnvelope() * SoundFontMath.keyNumberToMultiplyingFactor(region.getKeyNumberToVolumeEnvelopeDecay(), key);
         const sustain = SoundFontMath.decibelsToLinear(-region.getSustainVolumeEnvelope());
-        const release = @maximum(region.getReleaseVolumeEnvelope(), 0.01);
+        const release = @max(region.getReleaseVolumeEnvelope(), 0.01);
 
         envelope.startUnit(delay, attack, hold, decay, sustain, release);
     }
@@ -2857,7 +2857,7 @@ const VolumeEnvelope = struct {
             self.priority = 2.0 + self.value;
             return true;
         } else if (self.stage == EnvelopeStage.DECAY) {
-            self.value = @maximum(@floatCast(f32, SoundFontMath.expCutoff(self.decay_slope * (current_time - self.decay_start_time))), self.sustain_level);
+            self.value = @max(@floatCast(f32, SoundFontMath.expCutoff(self.decay_slope * (current_time - self.decay_start_time))), self.sustain_level);
             self.priority = 1.0 + self.value;
             return self.value > SoundFontMath.NON_AUDIBLE;
         } else if (self.stage == EnvelopeStage.RELEASE) {
@@ -2978,10 +2978,10 @@ const ModulationEnvelope = struct {
             self.value = 1.0;
             return true;
         } else if (self.stage == EnvelopeStage.DECAY) {
-            self.value = @maximum(@floatCast(f32, self.decay_slope * (self.decay_end_time - current_time)), self.sustain_level);
+            self.value = @max(@floatCast(f32, self.decay_slope * (self.decay_end_time - current_time)), self.sustain_level);
             return self.value > SoundFontMath.NON_AUDIBLE;
         } else if (self.stage == EnvelopeStage.RELEASE) {
-            self.value = @maximum(@floatCast(f32, self.release_level * self.release_slope * (self.release_end_time - current_time)), 0.0);
+            self.value = @max(@floatCast(f32, self.release_level * self.release_slope * (self.release_end_time - current_time)), 0.0);
             return self.value > SoundFontMath.NON_AUDIBLE;
         } else {
             unreachable;
@@ -3654,7 +3654,7 @@ pub const MidiFileSequencer = struct {
 
             const src_rem = @intCast(usize, self.synthesizer.block_size) - self.block_wrote;
             const dst_rem = left.len - wrote;
-            const rem = @minimum(src_rem, dst_rem);
+            const rem = @min(src_rem, dst_rem);
 
             self.synthesizer.render(left[wrote..(wrote + rem)], right[wrote..(wrote + rem)]);
 
