@@ -9,7 +9,7 @@ const ZiggySynthError = error{
     InvalidSoundFont,
     InvalidMidiFile,
     SampleRateIsOutOfRange,
-    BlockSizeIfOutOfRange,
+    BlockSizeIsOutOfRange,
     MaximumPolyphonyIsOutOfRange,
     Unexpected,
 };
@@ -1852,7 +1852,7 @@ pub const SynthesizerSettings = struct {
 
     fn checkBlockSize(value: i32) !void {
         if (!(8 <= value and value <= 1024)) {
-            return ZiggySynthError.BlockSizeIfOutOfRange;
+            return ZiggySynthError.BlockSizeIsOutOfRange;
         }
     }
 
