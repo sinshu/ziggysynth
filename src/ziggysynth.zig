@@ -1563,6 +1563,9 @@ pub const Synthesizer = struct {
 
         const master_volume = 0.5;
 
+        var reverb = try Reverb.init(allocator, settings.sample_rate);
+        reverb.deinit();
+
         return Self{
             .allocator = allocator,
             .sound_font = sound_font,
@@ -3685,5 +3688,488 @@ pub const MidiFileSequencer = struct {
             self.msg_index = 0;
             self.synthesizer.noteOffAll(false);
         }
+    }
+};
+
+const Reverb = struct {
+    const Self = @This();
+
+    const FIXED_GAIN: f32 = 0.015;
+    const SCALE_WET: f32 = 3.0;
+    const SCALE_DAMP: f32 = 0.4;
+    const SCALE_ROOM: f32 = 0.28;
+    const OFFSET_ROOM: f32 = 0.7;
+    const INITIAL_ROOM: f32 = 0.5;
+    const INITIAL_DAMP: f32 = 0.5;
+    const INITIAL_WET: f32 = 1.0 / Reverb.SCALE_WET;
+    const INITIAL_WIDTH: f32 = 1.0;
+    const STEREO_SPREAD: usize = 23;
+
+    const CF_TUNING_L1: usize = 1116;
+    const CF_TUNING_R1: usize = 1116 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L2: usize = 1188;
+    const CF_TUNING_R2: usize = 1188 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L3: usize = 1277;
+    const CF_TUNING_R3: usize = 1277 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L4: usize = 1356;
+    const CF_TUNING_R4: usize = 1356 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L5: usize = 1422;
+    const CF_TUNING_R5: usize = 1422 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L6: usize = 1491;
+    const CF_TUNING_R6: usize = 1491 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L7: usize = 1557;
+    const CF_TUNING_R7: usize = 1557 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L8: usize = 1617;
+    const CF_TUNING_R8: usize = 1617 + Reverb.STEREO_SPREAD;
+    const APF_TUNING_L1: usize = 556;
+    const APF_TUNING_R1: usize = 556 + Reverb.STEREO_SPREAD;
+    const APF_TUNING_L2: usize = 441;
+    const APF_TUNING_R2: usize = 441 + Reverb.STEREO_SPREAD;
+    const APF_TUNING_L3: usize = 341;
+    const APF_TUNING_R3: usize = 341 + Reverb.STEREO_SPREAD;
+    const APF_TUNING_L4: usize = 225;
+    const APF_TUNING_R4: usize = 225 + Reverb.STEREO_SPREAD;
+
+    allocator: Allocator,
+    buffer: []f32,
+
+    cfs_l: [8]CombFilter,
+    cfs_r: [8]CombFilter,
+    apfs_l: [4]AllPassFilter,
+    apfs_r: [4]AllPassFilter,
+
+    gain: f32,
+    room_size: f32,
+    room_size1: f32,
+    damp: f32,
+    damp1: f32,
+    wet: f32,
+    wet1: f32,
+    wet2: f32,
+    width: f32,
+
+    fn init(allocator: Allocator, sample_rate: i32) !Self {
+        const total_buffer_length = scale_tuning(sample_rate, CF_TUNING_L1)
+        + scale_tuning(sample_rate, CF_TUNING_R1)
+        + scale_tuning(sample_rate, CF_TUNING_L2)
+        + scale_tuning(sample_rate, CF_TUNING_R2)
+        + scale_tuning(sample_rate, CF_TUNING_L3)
+        + scale_tuning(sample_rate, CF_TUNING_R3)
+        + scale_tuning(sample_rate, CF_TUNING_L4)
+        + scale_tuning(sample_rate, CF_TUNING_R4)
+        + scale_tuning(sample_rate, CF_TUNING_L5)
+        + scale_tuning(sample_rate, CF_TUNING_R5)
+        + scale_tuning(sample_rate, CF_TUNING_L6)
+        + scale_tuning(sample_rate, CF_TUNING_R6)
+        + scale_tuning(sample_rate, CF_TUNING_L7)
+        + scale_tuning(sample_rate, CF_TUNING_R7)
+        + scale_tuning(sample_rate, CF_TUNING_L8)
+        + scale_tuning(sample_rate, CF_TUNING_R8)
+        + scale_tuning(sample_rate, APF_TUNING_L1)
+        + scale_tuning(sample_rate, APF_TUNING_R1)
+        + scale_tuning(sample_rate, APF_TUNING_L2)
+        + scale_tuning(sample_rate, APF_TUNING_R2)
+        + scale_tuning(sample_rate, APF_TUNING_L3)
+        + scale_tuning(sample_rate, APF_TUNING_R3)
+        + scale_tuning(sample_rate, APF_TUNING_L4)
+        + scale_tuning(sample_rate, APF_TUNING_R4);
+
+        var buffer = try allocator.alloc(f32, total_buffer_length);
+        errdefer allocator.free(buffer);
+
+        var cfs_l = mem.zeroes([8]CombFilter);
+        var cfs_r = mem.zeroes([8]CombFilter);
+        var apfs_l = mem.zeroes([4]AllPassFilter);
+        var apfs_r = mem.zeroes([4]AllPassFilter);
+        var p: usize = 0;
+
+        cfs_l[0] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_L1)]);
+        p += scale_tuning(sample_rate, CF_TUNING_L1);
+        cfs_l[1] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_L2)]);
+        p += scale_tuning(sample_rate, CF_TUNING_L2);
+        cfs_l[2] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_L3)]);
+        p += scale_tuning(sample_rate, CF_TUNING_L3);
+        cfs_l[3] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_L4)]);
+        p += scale_tuning(sample_rate, CF_TUNING_L4);
+        cfs_l[4] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_L5)]);
+        p += scale_tuning(sample_rate, CF_TUNING_L5);
+        cfs_l[5] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_L6)]);
+        p += scale_tuning(sample_rate, CF_TUNING_L6);
+        cfs_l[6] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_L7)]);
+        p += scale_tuning(sample_rate, CF_TUNING_L7);
+        cfs_l[7] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_L8)]);
+        p += scale_tuning(sample_rate, CF_TUNING_L8);
+
+        cfs_r[0] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_R1)]);
+        p += scale_tuning(sample_rate, CF_TUNING_R1);
+        cfs_r[1] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_R2)]);
+        p += scale_tuning(sample_rate, CF_TUNING_R2);
+        cfs_r[2] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_R3)]);
+        p += scale_tuning(sample_rate, CF_TUNING_R3);
+        cfs_r[3] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_R4)]);
+        p += scale_tuning(sample_rate, CF_TUNING_R4);
+        cfs_r[4] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_R5)]);
+        p += scale_tuning(sample_rate, CF_TUNING_R5);
+        cfs_r[5] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_R6)]);
+        p += scale_tuning(sample_rate, CF_TUNING_R6);
+        cfs_r[6] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_R7)]);
+        p += scale_tuning(sample_rate, CF_TUNING_R7);
+        cfs_r[7] = CombFilter.init(buffer[p..scale_tuning(sample_rate, p + CF_TUNING_R8)]);
+        p += scale_tuning(sample_rate, CF_TUNING_R8);
+
+        apfs_l[0] = AllPassFilter.init(buffer[p..scale_tuning(sample_rate, p + APF_TUNING_L1)]);
+        p += scale_tuning(sample_rate, APF_TUNING_L1);
+        apfs_l[1] = AllPassFilter.init(buffer[p..scale_tuning(sample_rate, p + APF_TUNING_L2)]);
+        p += scale_tuning(sample_rate, APF_TUNING_L2);
+        apfs_l[2] = AllPassFilter.init(buffer[p..scale_tuning(sample_rate, p + APF_TUNING_L3)]);
+        p += scale_tuning(sample_rate, APF_TUNING_L3);
+        apfs_l[3] = AllPassFilter.init(buffer[p..scale_tuning(sample_rate, p + APF_TUNING_L4)]);
+        p += scale_tuning(sample_rate, APF_TUNING_L4);
+
+        apfs_r[0] = AllPassFilter.init(buffer[p..scale_tuning(sample_rate, p + APF_TUNING_R1)]);
+        p += scale_tuning(sample_rate, APF_TUNING_R1);
+        apfs_r[1] = AllPassFilter.init(buffer[p..scale_tuning(sample_rate, p + APF_TUNING_R2)]);
+        p += scale_tuning(sample_rate, APF_TUNING_R2);
+        apfs_r[2] = AllPassFilter.init(buffer[p..scale_tuning(sample_rate, p + APF_TUNING_R3)]);
+        p += scale_tuning(sample_rate, APF_TUNING_R3);
+        apfs_r[3] = AllPassFilter.init(buffer[p..scale_tuning(sample_rate, p + APF_TUNING_R4)]);
+        p += scale_tuning(sample_rate, APF_TUNING_R4);
+
+        if (p != total_buffer_length) {
+            unreachable;
+        }
+
+        {
+            var i: usize = 0;
+            while (i < apfs_l.len) : (i += 1) {
+                apfs_l[i].set_feedback(0.5);
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < apfs_r.len) : (i += 1) {
+                apfs_r[i].set_feedback(0.5);
+            }
+        }
+
+        var reverb = Self{
+            .allocator = allocator,
+            .buffer = buffer,
+            .cfs_l = cfs_l,
+            .cfs_r = cfs_r,
+            .apfs_l = apfs_l,
+            .apfs_r = apfs_r,
+            .gain = 0.0,
+            .room_size = 0.0,
+            .room_size1 = 0.0,
+            .damp = 0.0,
+            .damp1 = 0.0,
+            .wet = 0.0,
+            .wet1 = 0.0,
+            .wet2 = 0.0,
+            .width = 0.0,
+        };
+
+        reverb.set_wet(Reverb.INITIAL_WET);
+        reverb.set_room_size(Reverb.INITIAL_ROOM);
+        reverb.set_damp(Reverb.INITIAL_DAMP);
+        reverb.set_width(Reverb.INITIAL_WIDTH);
+
+        return reverb;
+    }
+
+    fn deinit(self: *Self) void {
+        self.allocator.free(self.buffer);
+    }
+
+    fn mute(self: *Self) void {
+        {
+            var i: usize = 0;
+            while (i < self.cfs_l.len) : (i += 1) {
+                self.cfs_l[i].mute();
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.cfs_r.len) : (i += 1) {
+                self.cfs_r[i].mute();
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.apfs_l.len) : (i += 1) {
+                self.apfs_l[i].mute();
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.apfs_r.len) : (i += 1) {
+                self.apfs_r[i].mute();
+            }
+        }
+    }
+
+    fn scale_tuning(sample_rate: i32, tuning: usize) usize {
+        return @floatToInt(usize, @round(@intToFloat(f64, sample_rate) / 44100.0 * @intToFloat(f64, tuning)));
+    }
+
+    fn process(self: *Self, input: []f32, output_left: []f32, output_right: []f32) void {
+        const length = input.len;
+
+        {
+            var i: usize = 0;
+            while (i < length) : (i += 1) {
+                output_left[i] = 0.0;
+            }
+        }
+        {
+            var i: usize = 0;
+            while (i < length) : (i += 1) {
+                output_right[i] = 0.0;
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.cfs_l.len) : (i += 1) {
+                self.cfs_l[i].process(input, output_left);
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.apfs_l.len) : (i += 1) {
+                self.apfs_l[i].process(output_left);
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.cfs_r.len) : (i += 1) {
+                self.cfs_r[i].process(input, output_right);
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.apfs_r.len) : (i += 1) {
+                self.apfs_r[i].process(output_right);
+            }
+        }
+
+        // With the default settings, we can skip this part.
+        if (1.0 - self.wet1 > 1.0E-3 or self.wet2 > 1.0E-3) {
+            var t: usize = 0;
+            while (t < length) : (t += 1) {
+                const left = output_left[t];
+                const right = output_right[t];
+                output_left[t] = left * self.wet1 + right * self.wet2;
+                output_right[t] = right * self.wet1 + left * self.wet2;
+            }
+        }
+    }
+
+    fn update(self: *Self) void {
+        self.wet1 = self.wet * (self.width / 2.0 + 0.5);
+        self.wet2 = self.wet * ((1.0 - self.width) / 2.0);
+
+        self.room_size1 = self.room_size;
+        self.damp1 = self.damp;
+        self.gain = Reverb.FIXED_GAIN;
+
+        {
+            var i: usize = 0;
+            while (i < self.cfs_l.len) : (i += 1) {
+                self.cfs_l[i].set_feedback(self.room_size1);
+                self.cfs_l[i].set_damp(self.damp1);
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.cfs_r.len) : (i += 1) {
+                self.cfs_r[i].set_feedback(self.room_size1);
+                self.cfs_r[i].set_damp(self.damp1);
+            }
+        }
+    }
+
+    fn get_input_gain(self: *const Self) f32 {
+        return self.gain;
+    }
+
+    fn set_room_size(self: *Self, value: f32) void {
+        self.room_size = (value * Reverb.SCALE_ROOM) + Reverb.OFFSET_ROOM;
+        self.update();
+    }
+
+    fn set_damp(self: *Self, value: f32) void {
+        self.damp = value * Reverb.SCALE_DAMP;
+        self.update();
+    }
+
+    fn set_wet(self: *Self, value: f32) void {
+        self.wet = value * Reverb.SCALE_WET;
+        self.update();
+    }
+
+    fn set_width(self: *Self, value: f32) void {
+        self.width = value;
+        self.update();
+    }
+};
+
+const CombFilter = struct {
+    const Self = @This();
+
+    buffer: []f32,
+
+    buffer_index: usize,
+    filter_store: f32,
+
+    feedback: f32,
+    damp1: f32,
+    damp2: f32,
+
+    fn init(buffer: []f32) Self {
+        return Self{
+            .buffer = buffer,
+            .buffer_index = 0,
+            .filter_store = 0.0,
+            .feedback = 0.0,
+            .damp1 = 0.0,
+            .damp2 = 0.0,
+        };
+    }
+
+    fn mute(self: *Self) void {
+        var i: usize = 0;
+        while (i < self.buffer.len) : (i += 1) {
+            self.buffer[i] = 0.0;
+        }
+
+        self.filter_store = 0.0;
+    }
+
+    fn process(self: *Self, input_block: []f32, output_block: []f32) void {
+        const buffer_length = self.buffer.len;
+        const output_block_length = output_block.len;
+
+        var block_index: usize = 0;
+        while (block_index < output_block_length) {
+            if (self.buffer_index == buffer_length) {
+                self.buffer_index = 0;
+            }
+
+            const src_rem = buffer_length - self.buffer_index;
+            const dst_rem = output_block_length - block_index;
+            const rem = @min(src_rem, dst_rem);
+
+            var t: usize = 0;
+            while (t < rem) : (t += 1) {
+                const block_pos = block_index + t;
+                const buffer_pos = self.buffer_index + t;
+
+                const input = input_block[block_pos];
+
+                // The following ifs are to avoid performance problem due to denormalized number.
+                // The original implementation uses unsafe cast to detect denormalized number.
+                // I tried to reproduce the original implementation using Unsafe.As,
+                // but the simple Math.Abs version was faster according to some benchmarks.
+
+                var output = self.buffer[buffer_pos];
+                if (@fabs(output) < 1.0E-6) {
+                    output = 0.0;
+                }
+
+                self.filter_store = (output * self.damp2) + (self.filter_store * self.damp1);
+                if (@fabs(self.filter_store) < 1.0E-6) {
+                    self.filter_store = 0.0;
+                }
+
+                self.buffer[buffer_pos] = input + (self.filter_store * self.feedback);
+                output_block[block_pos] += output;
+            }
+
+            self.buffer_index += rem;
+            block_index += rem;
+        }
+    }
+
+    fn set_feedback(self: *Self, value: f32) void {
+        self.feedback = value;
+    }
+
+    fn set_damp(self: *Self, value: f32) void {
+        self.damp1 = value;
+        self.damp2 = 1.0 - value;
+    }
+};
+
+const AllPassFilter = struct {
+    const Self = @This();
+
+    buffer: []f32,
+
+    buffer_index: usize,
+
+    feedback: f32,
+
+    fn init(buffer: []f32) Self {
+        return Self{
+            .buffer = buffer,
+            .buffer_index = 0,
+            .feedback = 0.0,
+        };
+    }
+
+    fn mute(self: *Self) void {
+        var i: usize = 0;
+        while (i < self.buffer.len) : (i += 1) {
+            self.buffer[i] = 0.0;
+        }
+    }
+
+    fn process(self: *Self, block: []f32) void {
+        const buffer_length = self.buffer.len;
+        const block_length = block.len;
+
+        var block_index: usize = 0;
+        while (block_index < block_length) {
+            if (self.buffer_index == buffer_length) {
+                self.buffer_index = 0;
+            }
+
+            const src_rem = buffer_length - self.buffer_index;
+            const dst_rem = block_length - block_index;
+            const rem = @min(src_rem, dst_rem);
+
+            var t: usize = 0;
+            while (t < rem) : (t += 1) {
+                const block_pos = block_index + t;
+                const buffer_pos = self.buffer_index + t;
+
+                const input = block[block_pos];
+
+                var bufout = self.buffer[buffer_pos];
+                if (@fabs(bufout) < 1.0E-6) {
+                    bufout = 0.0;
+                }
+
+                block[block_pos] = bufout - input;
+                self.buffer[buffer_pos] = input + (bufout * self.feedback);
+            }
+
+            self.buffer_index += rem;
+            block_index += rem;
+        }
+    }
+
+    fn set_feedback(self: *Self, value: f32) void {
+        self.feedback = value;
     }
 };
