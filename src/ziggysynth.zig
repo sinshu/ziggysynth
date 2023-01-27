@@ -1510,6 +1510,11 @@ pub const Synthesizer = struct {
 
     master_volume: f32,
 
+    reverb: ?Reverb,
+    reverb_input: ?[]f32,
+    reverb_output_left: ?[]f32,
+    reverb_output_right: ?[]f32,
+
     pub fn init(allocator: Allocator, sound_font: SoundFont, settings: SynthesizerSettings) !Self {
         try settings.validate();
 
@@ -1563,8 +1568,23 @@ pub const Synthesizer = struct {
 
         const master_volume = 0.5;
 
-        var reverb = try Reverb.init(allocator, settings.sample_rate);
-        reverb.deinit();
+        var reverb: ?Reverb = null;
+        var reverb_input: ?[]f32 = null;
+        var reverb_output_left: ?[]f32 = null;
+        var reverb_output_right: ?[]f32 = null;
+        errdefer {
+            if (reverb != null) reverb.?.deinit();
+            if (reverb_input) |value| allocator.free(value);
+            if (reverb_output_left) |value| allocator.free(value);
+            if (reverb_output_right) |value| allocator.free(value);
+        }
+
+        if (settings.enable_reverb_and_chorus) {
+            reverb = try Reverb.init(allocator, settings.sample_rate);
+            reverb_input = try allocator.alloc(f32, @intCast(usize, settings.block_size));
+            reverb_output_left = try allocator.alloc(f32, @intCast(usize, settings.block_size));
+            reverb_output_right = try allocator.alloc(f32, @intCast(usize, settings.block_size));
+        }
 
         return Self{
             .allocator = allocator,
@@ -1583,10 +1603,20 @@ pub const Synthesizer = struct {
             .inverse_block_size = inverse_block_size,
             .block_read = block_read,
             .master_volume = master_volume,
+            .reverb = reverb,
+            .reverb_input = reverb_input,
+            .reverb_output_left = reverb_output_left,
+            .reverb_output_right = reverb_output_right,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        if (self.enable_reverb_and_chorus) {
+            self.allocator.free(self.reverb_output_right.?);
+            self.allocator.free(self.reverb_output_left.?);
+            self.allocator.free(self.reverb_input.?);
+            self.reverb.?.deinit();
+        }
         self.allocator.free(self.block_right);
         self.allocator.free(self.block_left);
         self.voices.deinit();
@@ -1750,6 +1780,10 @@ pub const Synthesizer = struct {
             self.channels[i].reset();
         }
 
+        if (self.enable_reverb_and_chorus) {
+            self.reverb.?.mute();
+        }
+
         self.block_read = @intCast(usize, self.block_size);
     }
 
@@ -1781,11 +1815,12 @@ pub const Synthesizer = struct {
     }
 
     fn renderBlock(self: *Self) void {
+        const block_size = @intCast(usize, self.block_size);
+
         self.voices.processUnit(self);
 
         {
             var t: usize = 0;
-            var block_size = @intCast(usize, self.block_size);
             while (t < block_size) : (t += 1) {
                 self.block_left[t] = 0.0;
                 self.block_right[t] = 0.0;
@@ -1802,6 +1837,29 @@ pub const Synthesizer = struct {
                 const previous_gain_right = self.master_volume * voice.previous_mix_gain_right;
                 const current_gain_right = self.master_volume * voice.current_mix_gain_right;
                 self.writeBlock(previous_gain_right, current_gain_right, voice.block, self.block_right);
+            }
+        }
+
+        if (self.enable_reverb_and_chorus) {
+            var reverb = &self.reverb.?;
+            var reverb_input = self.reverb_input.?;
+            var reverb_output_left = self.reverb_output_left.?;
+            var reverb_output_right = self.reverb_output_right.?;
+            {
+                var t: usize = 0;
+                while (t < block_size) : (t += 1) {
+                    reverb_input[t] = 0.0;
+                }
+            }
+            var i: usize = 0;
+            while (i < self.voices.active_voice_count) : (i += 1) {
+                const voice = &self.voices.voices[i];
+                const previous_gain = reverb.get_input_gain() * voice.previous_reverb_send * (voice.previous_mix_gain_left + voice.previous_mix_gain_right);
+                const current_gain = reverb.get_input_gain() * voice.current_reverb_send * (voice.current_mix_gain_left + voice.current_mix_gain_right);
+                self.writeBlock(previous_gain, current_gain, voice.block, reverb_input);
+                reverb.process(reverb_input, reverb_output_left, reverb_output_right);
+                ArrayMath.multiplyAdd(self.master_volume, reverb_output_left, self.block_left);
+                ArrayMath.multiplyAdd(self.master_volume, reverb_output_right, self.block_right);
             }
         }
     }
