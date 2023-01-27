@@ -1857,10 +1857,10 @@ pub const Synthesizer = struct {
                 const previous_gain = reverb.get_input_gain() * voice.previous_reverb_send * (voice.previous_mix_gain_left + voice.previous_mix_gain_right);
                 const current_gain = reverb.get_input_gain() * voice.current_reverb_send * (voice.current_mix_gain_left + voice.current_mix_gain_right);
                 self.writeBlock(previous_gain, current_gain, voice.block, reverb_input);
-                reverb.process(reverb_input, reverb_output_left, reverb_output_right);
-                ArrayMath.multiplyAdd(self.master_volume, reverb_output_left, self.block_left);
-                ArrayMath.multiplyAdd(self.master_volume, reverb_output_right, self.block_right);
             }
+            reverb.process(reverb_input, reverb_output_left, reverb_output_right);
+            ArrayMath.multiplyAdd(self.master_volume, reverb_output_left, self.block_left);
+            ArrayMath.multiplyAdd(self.master_volume, reverb_output_right, self.block_right);
         }
     }
 
