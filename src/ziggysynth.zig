@@ -3875,30 +3875,33 @@ const Reverb = struct {
     width: f32,
 
     fn init(allocator: Allocator, sample_rate: i32) !Self {
-        const total_buffer_length = scale_tuning(sample_rate, CF_TUNING_L1)
-        + scale_tuning(sample_rate, CF_TUNING_R1)
-        + scale_tuning(sample_rate, CF_TUNING_L2)
-        + scale_tuning(sample_rate, CF_TUNING_R2)
-        + scale_tuning(sample_rate, CF_TUNING_L3)
-        + scale_tuning(sample_rate, CF_TUNING_R3)
-        + scale_tuning(sample_rate, CF_TUNING_L4)
-        + scale_tuning(sample_rate, CF_TUNING_R4)
-        + scale_tuning(sample_rate, CF_TUNING_L5)
-        + scale_tuning(sample_rate, CF_TUNING_R5)
-        + scale_tuning(sample_rate, CF_TUNING_L6)
-        + scale_tuning(sample_rate, CF_TUNING_R6)
-        + scale_tuning(sample_rate, CF_TUNING_L7)
-        + scale_tuning(sample_rate, CF_TUNING_R7)
-        + scale_tuning(sample_rate, CF_TUNING_L8)
-        + scale_tuning(sample_rate, CF_TUNING_R8)
-        + scale_tuning(sample_rate, APF_TUNING_L1)
-        + scale_tuning(sample_rate, APF_TUNING_R1)
-        + scale_tuning(sample_rate, APF_TUNING_L2)
-        + scale_tuning(sample_rate, APF_TUNING_R2)
-        + scale_tuning(sample_rate, APF_TUNING_L3)
-        + scale_tuning(sample_rate, APF_TUNING_R3)
-        + scale_tuning(sample_rate, APF_TUNING_L4)
-        + scale_tuning(sample_rate, APF_TUNING_R4);
+        // zig-format off
+        const total_buffer_length =
+            scale_tuning(sample_rate, CF_TUNING_L1) +
+            scale_tuning(sample_rate, CF_TUNING_R1) +
+            scale_tuning(sample_rate, CF_TUNING_L2) +
+            scale_tuning(sample_rate, CF_TUNING_R2) +
+            scale_tuning(sample_rate, CF_TUNING_L3) +
+            scale_tuning(sample_rate, CF_TUNING_R3) +
+            scale_tuning(sample_rate, CF_TUNING_L4) +
+            scale_tuning(sample_rate, CF_TUNING_R4) +
+            scale_tuning(sample_rate, CF_TUNING_L5) +
+            scale_tuning(sample_rate, CF_TUNING_R5) +
+            scale_tuning(sample_rate, CF_TUNING_L6) +
+            scale_tuning(sample_rate, CF_TUNING_R6) +
+            scale_tuning(sample_rate, CF_TUNING_L7) +
+            scale_tuning(sample_rate, CF_TUNING_R7) +
+            scale_tuning(sample_rate, CF_TUNING_L8) +
+            scale_tuning(sample_rate, CF_TUNING_R8) +
+            scale_tuning(sample_rate, APF_TUNING_L1) +
+            scale_tuning(sample_rate, APF_TUNING_R1) +
+            scale_tuning(sample_rate, APF_TUNING_L2) +
+            scale_tuning(sample_rate, APF_TUNING_R2) +
+            scale_tuning(sample_rate, APF_TUNING_L3) +
+            scale_tuning(sample_rate, APF_TUNING_R3) +
+            scale_tuning(sample_rate, APF_TUNING_L4) +
+            scale_tuning(sample_rate, APF_TUNING_R4);
+        // zig-format on
 
         var buffer = try allocator.alloc(f32, total_buffer_length);
         errdefer allocator.free(buffer);
@@ -4331,7 +4334,7 @@ const Chorus = struct {
             while (t < delay_table_length) : (t += 1) {
                 const phase = 2.0 * math.pi * @intToFloat(f64, t) / @intToFloat(f64, delay_table_length);
                 delay_table[t] = @floatCast(f32, @intToFloat(f64, sample_rate) * (delay + depth * @sin(phase)));
-        }
+            }
         }
 
         const buffer_index_l: usize = 0;
@@ -4340,7 +4343,7 @@ const Chorus = struct {
         const delay_table_index_l: usize = 0;
         const delay_table_index_r: usize = delay_table_length / 4;
 
-        var chorus = Self {
+        var chorus = Self{
             .allocator = allocator,
             .buffer_l = buffer_l,
             .buffer_r = buffer_r,
