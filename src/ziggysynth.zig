@@ -1510,6 +1510,17 @@ pub const Synthesizer = struct {
 
     master_volume: f32,
 
+    reverb: ?Reverb,
+    reverb_input: ?[]f32,
+    reverb_output_left: ?[]f32,
+    reverb_output_right: ?[]f32,
+
+    chorus: ?Chorus,
+    chorus_input_left: ?[]f32,
+    chorus_input_right: ?[]f32,
+    chorus_output_left: ?[]f32,
+    chorus_output_right: ?[]f32,
+
     pub fn init(allocator: Allocator, sound_font: SoundFont, settings: SynthesizerSettings) !Self {
         try settings.validate();
 
@@ -1563,6 +1574,43 @@ pub const Synthesizer = struct {
 
         const master_volume = 0.5;
 
+        var reverb: ?Reverb = null;
+        var reverb_input: ?[]f32 = null;
+        var reverb_output_left: ?[]f32 = null;
+        var reverb_output_right: ?[]f32 = null;
+        errdefer {
+            if (reverb_output_right) |value| allocator.free(value);
+            if (reverb_output_left) |value| allocator.free(value);
+            if (reverb_input) |value| allocator.free(value);
+            if (reverb != null) reverb.?.deinit();
+        }
+
+        var chorus: ?Chorus = null;
+        var chorus_input_left: ?[]f32 = null;
+        var chorus_input_right: ?[]f32 = null;
+        var chorus_output_left: ?[]f32 = null;
+        var chorus_output_right: ?[]f32 = null;
+        errdefer {
+            if (chorus_output_right) |value| allocator.free(value);
+            if (chorus_output_left) |value| allocator.free(value);
+            if (chorus_input_right) |value| allocator.free(value);
+            if (chorus_input_left) |value| allocator.free(value);
+            if (chorus != null) chorus.?.deinit();
+        }
+
+        if (settings.enable_reverb_and_chorus) {
+            reverb = try Reverb.init(allocator, settings.sample_rate);
+            reverb_input = try allocator.alloc(f32, @intCast(usize, settings.block_size));
+            reverb_output_left = try allocator.alloc(f32, @intCast(usize, settings.block_size));
+            reverb_output_right = try allocator.alloc(f32, @intCast(usize, settings.block_size));
+
+            chorus = try Chorus.init(allocator, settings.sample_rate, 0.002, 0.0019, 0.4);
+            chorus_input_left = try allocator.alloc(f32, @intCast(usize, settings.block_size));
+            chorus_input_right = try allocator.alloc(f32, @intCast(usize, settings.block_size));
+            chorus_output_left = try allocator.alloc(f32, @intCast(usize, settings.block_size));
+            chorus_output_right = try allocator.alloc(f32, @intCast(usize, settings.block_size));
+        }
+
         return Self{
             .allocator = allocator,
             .sound_font = sound_font,
@@ -1580,10 +1628,32 @@ pub const Synthesizer = struct {
             .inverse_block_size = inverse_block_size,
             .block_read = block_read,
             .master_volume = master_volume,
+            .reverb = reverb,
+            .reverb_input = reverb_input,
+            .reverb_output_left = reverb_output_left,
+            .reverb_output_right = reverb_output_right,
+            .chorus = chorus,
+            .chorus_input_left = chorus_input_left,
+            .chorus_input_right = chorus_input_right,
+            .chorus_output_left = chorus_output_left,
+            .chorus_output_right = chorus_output_right,
         };
     }
 
     pub fn deinit(self: *Self) void {
+        if (self.enable_reverb_and_chorus) {
+            self.allocator.free(self.chorus_output_right.?);
+            self.allocator.free(self.chorus_output_left.?);
+            self.allocator.free(self.chorus_input_right.?);
+            self.allocator.free(self.chorus_input_left.?);
+            self.chorus.?.deinit();
+
+            self.allocator.free(self.reverb_output_right.?);
+            self.allocator.free(self.reverb_output_left.?);
+            self.allocator.free(self.reverb_input.?);
+            self.reverb.?.deinit();
+        }
+
         self.allocator.free(self.block_right);
         self.allocator.free(self.block_left);
         self.voices.deinit();
@@ -1747,6 +1817,11 @@ pub const Synthesizer = struct {
             self.channels[i].reset();
         }
 
+        if (self.enable_reverb_and_chorus) {
+            self.reverb.?.mute();
+            self.chorus.?.mute();
+        }
+
         self.block_read = @intCast(usize, self.block_size);
     }
 
@@ -1778,11 +1853,12 @@ pub const Synthesizer = struct {
     }
 
     fn renderBlock(self: *Self) void {
+        const block_size = @intCast(usize, self.block_size);
+
         self.voices.processUnit(self);
 
         {
             var t: usize = 0;
-            var block_size = @intCast(usize, self.block_size);
             while (t < block_size) : (t += 1) {
                 self.block_left[t] = 0.0;
                 self.block_right[t] = 0.0;
@@ -1800,6 +1876,59 @@ pub const Synthesizer = struct {
                 const current_gain_right = self.master_volume * voice.current_mix_gain_right;
                 self.writeBlock(previous_gain_right, current_gain_right, voice.block, self.block_right);
             }
+        }
+
+        if (self.enable_reverb_and_chorus) {
+            var chorus = &self.chorus.?;
+            var chorus_input_left = self.chorus_input_left.?;
+            var chorus_input_right = self.chorus_input_right.?;
+            var chorus_output_left = self.chorus_output_left.?;
+            var chorus_output_right = self.chorus_output_right.?;
+            {
+                var t: usize = 0;
+                while (t < block_size) : (t += 1) {
+                    chorus_input_left[t] = 0.0;
+                    chorus_input_right[t] = 0.0;
+                }
+            }
+            {
+                var i: usize = 0;
+                while (i < self.voices.active_voice_count) : (i += 1) {
+                    const voice = &self.voices.voices[i];
+                    const previous_gain_left = voice.previous_chorus_send * voice.previous_mix_gain_left;
+                    const current_gain_left = voice.current_chorus_send * voice.current_mix_gain_left;
+                    self.writeBlock(previous_gain_left, current_gain_left, voice.block, chorus_input_left);
+                    const previous_gain_right = voice.previous_chorus_send * voice.previous_mix_gain_right;
+                    const current_gain_right = voice.current_chorus_send * voice.current_mix_gain_right;
+                    self.writeBlock(previous_gain_right, current_gain_right, voice.block, chorus_input_right);
+                }
+            }
+            chorus.process(chorus_input_left, chorus_input_right, chorus_output_left, chorus_output_right);
+            ArrayMath.multiplyAdd(self.master_volume, chorus_output_left, self.block_left);
+            ArrayMath.multiplyAdd(self.master_volume, chorus_output_right, self.block_right);
+
+            var reverb = &self.reverb.?;
+            var reverb_input = self.reverb_input.?;
+            var reverb_output_left = self.reverb_output_left.?;
+            var reverb_output_right = self.reverb_output_right.?;
+            {
+                var t: usize = 0;
+                while (t < block_size) : (t += 1) {
+                    reverb_input[t] = 0.0;
+                }
+            }
+            {
+                var i: usize = 0;
+                while (i < self.voices.active_voice_count) : (i += 1) {
+                    const voice = &self.voices.voices[i];
+                    const previous_gain = reverb.get_input_gain() * voice.previous_reverb_send * (voice.previous_mix_gain_left + voice.previous_mix_gain_right);
+                    const current_gain = reverb.get_input_gain() * voice.current_reverb_send * (voice.current_mix_gain_left + voice.current_mix_gain_right);
+                    self.writeBlock(previous_gain, current_gain, voice.block, reverb_input);
+                }
+            }
+            reverb.process(reverb_input, reverb_output_left, reverb_output_right);
+            ArrayMath.multiplyAdd(self.master_volume, reverb_output_left, self.block_left);
+            ArrayMath.multiplyAdd(self.master_volume, reverb_output_right, self.block_right);
         }
     }
 
@@ -3684,6 +3813,643 @@ pub const MidiFileSequencer = struct {
             self.current_time = 0.0;
             self.msg_index = 0;
             self.synthesizer.noteOffAll(false);
+        }
+    }
+};
+
+const Reverb = struct {
+    const Self = @This();
+
+    const FIXED_GAIN: f32 = 0.015;
+    const SCALE_WET: f32 = 3.0;
+    const SCALE_DAMP: f32 = 0.4;
+    const SCALE_ROOM: f32 = 0.28;
+    const OFFSET_ROOM: f32 = 0.7;
+    const INITIAL_ROOM: f32 = 0.5;
+    const INITIAL_DAMP: f32 = 0.5;
+    const INITIAL_WET: f32 = 1.0 / Reverb.SCALE_WET;
+    const INITIAL_WIDTH: f32 = 1.0;
+    const STEREO_SPREAD: usize = 23;
+
+    const CF_TUNING_L1: usize = 1116;
+    const CF_TUNING_R1: usize = 1116 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L2: usize = 1188;
+    const CF_TUNING_R2: usize = 1188 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L3: usize = 1277;
+    const CF_TUNING_R3: usize = 1277 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L4: usize = 1356;
+    const CF_TUNING_R4: usize = 1356 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L5: usize = 1422;
+    const CF_TUNING_R5: usize = 1422 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L6: usize = 1491;
+    const CF_TUNING_R6: usize = 1491 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L7: usize = 1557;
+    const CF_TUNING_R7: usize = 1557 + Reverb.STEREO_SPREAD;
+    const CF_TUNING_L8: usize = 1617;
+    const CF_TUNING_R8: usize = 1617 + Reverb.STEREO_SPREAD;
+    const APF_TUNING_L1: usize = 556;
+    const APF_TUNING_R1: usize = 556 + Reverb.STEREO_SPREAD;
+    const APF_TUNING_L2: usize = 441;
+    const APF_TUNING_R2: usize = 441 + Reverb.STEREO_SPREAD;
+    const APF_TUNING_L3: usize = 341;
+    const APF_TUNING_R3: usize = 341 + Reverb.STEREO_SPREAD;
+    const APF_TUNING_L4: usize = 225;
+    const APF_TUNING_R4: usize = 225 + Reverb.STEREO_SPREAD;
+
+    allocator: Allocator,
+    buffer: []f32,
+
+    cfs_l: [8]CombFilter,
+    cfs_r: [8]CombFilter,
+    apfs_l: [4]AllPassFilter,
+    apfs_r: [4]AllPassFilter,
+
+    gain: f32,
+    room_size: f32,
+    room_size1: f32,
+    damp: f32,
+    damp1: f32,
+    wet: f32,
+    wet1: f32,
+    wet2: f32,
+    width: f32,
+
+    fn init(allocator: Allocator, sample_rate: i32) !Self {
+        // zig-format off
+        const total_buffer_length =
+            scale_tuning(sample_rate, CF_TUNING_L1) +
+            scale_tuning(sample_rate, CF_TUNING_R1) +
+            scale_tuning(sample_rate, CF_TUNING_L2) +
+            scale_tuning(sample_rate, CF_TUNING_R2) +
+            scale_tuning(sample_rate, CF_TUNING_L3) +
+            scale_tuning(sample_rate, CF_TUNING_R3) +
+            scale_tuning(sample_rate, CF_TUNING_L4) +
+            scale_tuning(sample_rate, CF_TUNING_R4) +
+            scale_tuning(sample_rate, CF_TUNING_L5) +
+            scale_tuning(sample_rate, CF_TUNING_R5) +
+            scale_tuning(sample_rate, CF_TUNING_L6) +
+            scale_tuning(sample_rate, CF_TUNING_R6) +
+            scale_tuning(sample_rate, CF_TUNING_L7) +
+            scale_tuning(sample_rate, CF_TUNING_R7) +
+            scale_tuning(sample_rate, CF_TUNING_L8) +
+            scale_tuning(sample_rate, CF_TUNING_R8) +
+            scale_tuning(sample_rate, APF_TUNING_L1) +
+            scale_tuning(sample_rate, APF_TUNING_R1) +
+            scale_tuning(sample_rate, APF_TUNING_L2) +
+            scale_tuning(sample_rate, APF_TUNING_R2) +
+            scale_tuning(sample_rate, APF_TUNING_L3) +
+            scale_tuning(sample_rate, APF_TUNING_R3) +
+            scale_tuning(sample_rate, APF_TUNING_L4) +
+            scale_tuning(sample_rate, APF_TUNING_R4);
+        // zig-format on
+
+        var buffer = try allocator.alloc(f32, total_buffer_length);
+        errdefer allocator.free(buffer);
+
+        var cfs_l = mem.zeroes([8]CombFilter);
+        var cfs_r = mem.zeroes([8]CombFilter);
+        var apfs_l = mem.zeroes([4]AllPassFilter);
+        var apfs_r = mem.zeroes([4]AllPassFilter);
+        var p: usize = 0;
+
+        cfs_l[0] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L1))]);
+        p += scale_tuning(sample_rate, CF_TUNING_L1);
+        cfs_l[1] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L2))]);
+        p += scale_tuning(sample_rate, CF_TUNING_L2);
+        cfs_l[2] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L3))]);
+        p += scale_tuning(sample_rate, CF_TUNING_L3);
+        cfs_l[3] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L4))]);
+        p += scale_tuning(sample_rate, CF_TUNING_L4);
+        cfs_l[4] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L5))]);
+        p += scale_tuning(sample_rate, CF_TUNING_L5);
+        cfs_l[5] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L6))]);
+        p += scale_tuning(sample_rate, CF_TUNING_L6);
+        cfs_l[6] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L7))]);
+        p += scale_tuning(sample_rate, CF_TUNING_L7);
+        cfs_l[7] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L8))]);
+        p += scale_tuning(sample_rate, CF_TUNING_L8);
+
+        cfs_r[0] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R1))]);
+        p += scale_tuning(sample_rate, CF_TUNING_R1);
+        cfs_r[1] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R2))]);
+        p += scale_tuning(sample_rate, CF_TUNING_R2);
+        cfs_r[2] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R3))]);
+        p += scale_tuning(sample_rate, CF_TUNING_R3);
+        cfs_r[3] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R4))]);
+        p += scale_tuning(sample_rate, CF_TUNING_R4);
+        cfs_r[4] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R5))]);
+        p += scale_tuning(sample_rate, CF_TUNING_R5);
+        cfs_r[5] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R6))]);
+        p += scale_tuning(sample_rate, CF_TUNING_R6);
+        cfs_r[6] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R7))]);
+        p += scale_tuning(sample_rate, CF_TUNING_R7);
+        cfs_r[7] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R8))]);
+        p += scale_tuning(sample_rate, CF_TUNING_R8);
+
+        apfs_l[0] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_L1))]);
+        p += scale_tuning(sample_rate, APF_TUNING_L1);
+        apfs_l[1] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_L2))]);
+        p += scale_tuning(sample_rate, APF_TUNING_L2);
+        apfs_l[2] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_L3))]);
+        p += scale_tuning(sample_rate, APF_TUNING_L3);
+        apfs_l[3] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_L4))]);
+        p += scale_tuning(sample_rate, APF_TUNING_L4);
+
+        apfs_r[0] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_R1))]);
+        p += scale_tuning(sample_rate, APF_TUNING_R1);
+        apfs_r[1] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_R2))]);
+        p += scale_tuning(sample_rate, APF_TUNING_R2);
+        apfs_r[2] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_R3))]);
+        p += scale_tuning(sample_rate, APF_TUNING_R3);
+        apfs_r[3] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_R4))]);
+        p += scale_tuning(sample_rate, APF_TUNING_R4);
+
+        if (p != total_buffer_length) {
+            unreachable;
+        }
+
+        {
+            var i: usize = 0;
+            while (i < apfs_l.len) : (i += 1) {
+                apfs_l[i].set_feedback(0.5);
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < apfs_r.len) : (i += 1) {
+                apfs_r[i].set_feedback(0.5);
+            }
+        }
+
+        var reverb = Self{
+            .allocator = allocator,
+            .buffer = buffer,
+            .cfs_l = cfs_l,
+            .cfs_r = cfs_r,
+            .apfs_l = apfs_l,
+            .apfs_r = apfs_r,
+            .gain = 0.0,
+            .room_size = 0.0,
+            .room_size1 = 0.0,
+            .damp = 0.0,
+            .damp1 = 0.0,
+            .wet = 0.0,
+            .wet1 = 0.0,
+            .wet2 = 0.0,
+            .width = 0.0,
+        };
+
+        reverb.set_wet(Reverb.INITIAL_WET);
+        reverb.set_room_size(Reverb.INITIAL_ROOM);
+        reverb.set_damp(Reverb.INITIAL_DAMP);
+        reverb.set_width(Reverb.INITIAL_WIDTH);
+
+        return reverb;
+    }
+
+    fn deinit(self: *Self) void {
+        self.allocator.free(self.buffer);
+    }
+
+    fn mute(self: *Self) void {
+        {
+            var i: usize = 0;
+            while (i < self.cfs_l.len) : (i += 1) {
+                self.cfs_l[i].mute();
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.cfs_r.len) : (i += 1) {
+                self.cfs_r[i].mute();
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.apfs_l.len) : (i += 1) {
+                self.apfs_l[i].mute();
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.apfs_r.len) : (i += 1) {
+                self.apfs_r[i].mute();
+            }
+        }
+    }
+
+    fn scale_tuning(sample_rate: i32, tuning: usize) usize {
+        return @floatToInt(usize, @round(@intToFloat(f64, sample_rate) / 44100.0 * @intToFloat(f64, tuning)));
+    }
+
+    fn process(self: *Self, input: []f32, output_left: []f32, output_right: []f32) void {
+        const length = input.len;
+
+        {
+            var i: usize = 0;
+            while (i < length) : (i += 1) {
+                output_left[i] = 0.0;
+            }
+        }
+        {
+            var i: usize = 0;
+            while (i < length) : (i += 1) {
+                output_right[i] = 0.0;
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.cfs_l.len) : (i += 1) {
+                self.cfs_l[i].process(input, output_left);
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.apfs_l.len) : (i += 1) {
+                self.apfs_l[i].process(output_left);
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.cfs_r.len) : (i += 1) {
+                self.cfs_r[i].process(input, output_right);
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.apfs_r.len) : (i += 1) {
+                self.apfs_r[i].process(output_right);
+            }
+        }
+
+        // With the default settings, we can skip this part.
+        if (1.0 - self.wet1 > 1.0E-3 or self.wet2 > 1.0E-3) {
+            var t: usize = 0;
+            while (t < length) : (t += 1) {
+                const left = output_left[t];
+                const right = output_right[t];
+                output_left[t] = left * self.wet1 + right * self.wet2;
+                output_right[t] = right * self.wet1 + left * self.wet2;
+            }
+        }
+    }
+
+    fn update(self: *Self) void {
+        self.wet1 = self.wet * (self.width / 2.0 + 0.5);
+        self.wet2 = self.wet * ((1.0 - self.width) / 2.0);
+
+        self.room_size1 = self.room_size;
+        self.damp1 = self.damp;
+        self.gain = Reverb.FIXED_GAIN;
+
+        {
+            var i: usize = 0;
+            while (i < self.cfs_l.len) : (i += 1) {
+                self.cfs_l[i].set_feedback(self.room_size1);
+                self.cfs_l[i].set_damp(self.damp1);
+            }
+        }
+
+        {
+            var i: usize = 0;
+            while (i < self.cfs_r.len) : (i += 1) {
+                self.cfs_r[i].set_feedback(self.room_size1);
+                self.cfs_r[i].set_damp(self.damp1);
+            }
+        }
+    }
+
+    fn get_input_gain(self: *const Self) f32 {
+        return self.gain;
+    }
+
+    fn set_room_size(self: *Self, value: f32) void {
+        self.room_size = (value * Reverb.SCALE_ROOM) + Reverb.OFFSET_ROOM;
+        self.update();
+    }
+
+    fn set_damp(self: *Self, value: f32) void {
+        self.damp = value * Reverb.SCALE_DAMP;
+        self.update();
+    }
+
+    fn set_wet(self: *Self, value: f32) void {
+        self.wet = value * Reverb.SCALE_WET;
+        self.update();
+    }
+
+    fn set_width(self: *Self, value: f32) void {
+        self.width = value;
+        self.update();
+    }
+};
+
+const CombFilter = struct {
+    const Self = @This();
+
+    buffer: []f32,
+
+    buffer_index: usize,
+    filter_store: f32,
+
+    feedback: f32,
+    damp1: f32,
+    damp2: f32,
+
+    fn init(buffer: []f32) Self {
+        return Self{
+            .buffer = buffer,
+            .buffer_index = 0,
+            .filter_store = 0.0,
+            .feedback = 0.0,
+            .damp1 = 0.0,
+            .damp2 = 0.0,
+        };
+    }
+
+    fn mute(self: *Self) void {
+        var i: usize = 0;
+        while (i < self.buffer.len) : (i += 1) {
+            self.buffer[i] = 0.0;
+        }
+
+        self.filter_store = 0.0;
+    }
+
+    fn process(self: *Self, input_block: []f32, output_block: []f32) void {
+        const buffer_length = self.buffer.len;
+        const output_block_length = output_block.len;
+
+        var block_index: usize = 0;
+        while (block_index < output_block_length) {
+            if (self.buffer_index == buffer_length) {
+                self.buffer_index = 0;
+            }
+
+            const src_rem = buffer_length - self.buffer_index;
+            const dst_rem = output_block_length - block_index;
+            const rem = @min(src_rem, dst_rem);
+
+            var t: usize = 0;
+            while (t < rem) : (t += 1) {
+                const block_pos = block_index + t;
+                const buffer_pos = self.buffer_index + t;
+
+                const input = input_block[block_pos];
+
+                // The following ifs are to avoid performance problem due to denormalized number.
+                // The original implementation uses unsafe cast to detect denormalized number.
+                // I tried to reproduce the original implementation using Unsafe.As,
+                // but the simple Math.Abs version was faster according to some benchmarks.
+
+                var output = self.buffer[buffer_pos];
+                if (@fabs(output) < 1.0E-6) {
+                    output = 0.0;
+                }
+
+                self.filter_store = (output * self.damp2) + (self.filter_store * self.damp1);
+                if (@fabs(self.filter_store) < 1.0E-6) {
+                    self.filter_store = 0.0;
+                }
+
+                self.buffer[buffer_pos] = input + (self.filter_store * self.feedback);
+                output_block[block_pos] += output;
+            }
+
+            self.buffer_index += rem;
+            block_index += rem;
+        }
+    }
+
+    fn set_feedback(self: *Self, value: f32) void {
+        self.feedback = value;
+    }
+
+    fn set_damp(self: *Self, value: f32) void {
+        self.damp1 = value;
+        self.damp2 = 1.0 - value;
+    }
+};
+
+const AllPassFilter = struct {
+    const Self = @This();
+
+    buffer: []f32,
+
+    buffer_index: usize,
+
+    feedback: f32,
+
+    fn init(buffer: []f32) Self {
+        return Self{
+            .buffer = buffer,
+            .buffer_index = 0,
+            .feedback = 0.0,
+        };
+    }
+
+    fn mute(self: *Self) void {
+        var i: usize = 0;
+        while (i < self.buffer.len) : (i += 1) {
+            self.buffer[i] = 0.0;
+        }
+    }
+
+    fn process(self: *Self, block: []f32) void {
+        const buffer_length = self.buffer.len;
+        const block_length = block.len;
+
+        var block_index: usize = 0;
+        while (block_index < block_length) {
+            if (self.buffer_index == buffer_length) {
+                self.buffer_index = 0;
+            }
+
+            const src_rem = buffer_length - self.buffer_index;
+            const dst_rem = block_length - block_index;
+            const rem = @min(src_rem, dst_rem);
+
+            var t: usize = 0;
+            while (t < rem) : (t += 1) {
+                const block_pos = block_index + t;
+                const buffer_pos = self.buffer_index + t;
+
+                const input = block[block_pos];
+
+                var bufout = self.buffer[buffer_pos];
+                if (@fabs(bufout) < 1.0E-6) {
+                    bufout = 0.0;
+                }
+
+                block[block_pos] = bufout - input;
+                self.buffer[buffer_pos] = input + (bufout * self.feedback);
+            }
+
+            self.buffer_index += rem;
+            block_index += rem;
+        }
+    }
+
+    fn set_feedback(self: *Self, value: f32) void {
+        self.feedback = value;
+    }
+};
+
+const Chorus = struct {
+    const Self = @This();
+
+    allocator: Allocator,
+
+    buffer_l: []f32,
+    buffer_r: []f32,
+
+    delay_table: []f32,
+
+    buffer_index_l: usize,
+    buffer_index_r: usize,
+
+    delay_table_index_l: usize,
+    delay_table_index_r: usize,
+
+    fn init(allocator: Allocator, sample_rate: i32, delay: f64, depth: f64, frequency: f64) !Self {
+        const buffer_length = @floatToInt(usize, @intToFloat(f64, sample_rate) * (delay + depth)) + 2;
+        var buffer_l = try allocator.alloc(f32, buffer_length);
+        errdefer allocator.free(buffer_l);
+        var buffer_r = try allocator.alloc(f32, buffer_length);
+        errdefer allocator.free(buffer_r);
+
+        const delay_table_length = @floatToInt(usize, @round(@intToFloat(f64, sample_rate) / frequency));
+        var delay_table = try allocator.alloc(f32, delay_table_length);
+        errdefer allocator.free(delay_table);
+        {
+            var t: usize = 0;
+            while (t < delay_table_length) : (t += 1) {
+                const phase = 2.0 * math.pi * @intToFloat(f64, t) / @intToFloat(f64, delay_table_length);
+                delay_table[t] = @floatCast(f32, @intToFloat(f64, sample_rate) * (delay + depth * @sin(phase)));
+            }
+        }
+
+        const buffer_index_l: usize = 0;
+        const buffer_index_r: usize = 0;
+
+        const delay_table_index_l: usize = 0;
+        const delay_table_index_r: usize = delay_table_length / 4;
+
+        var chorus = Self{
+            .allocator = allocator,
+            .buffer_l = buffer_l,
+            .buffer_r = buffer_r,
+            .delay_table = delay_table,
+            .buffer_index_l = buffer_index_l,
+            .buffer_index_r = buffer_index_r,
+            .delay_table_index_l = delay_table_index_l,
+            .delay_table_index_r = delay_table_index_r,
+        };
+
+        chorus.mute();
+
+        return chorus;
+    }
+
+    fn deinit(self: *Self) void {
+        self.allocator.free(self.delay_table);
+        self.allocator.free(self.buffer_l);
+        self.allocator.free(self.buffer_r);
+    }
+
+    fn process(self: *Self, input_left: []f32, input_right: []f32, output_left: []f32, output_right: []f32) void {
+        const buffer_length = self.buffer_l.len;
+        const delay_table_length = self.delay_table.len;
+        const input_length = input_left.len;
+
+        {
+            var t: usize = 0;
+            while (t < input_length) : (t += 1) {
+                var position = @intToFloat(f64, self.buffer_index_l) - @floatCast(f64, self.delay_table[self.delay_table_index_l]);
+                if (position < 0.0) {
+                    position += @intToFloat(f64, buffer_length);
+                }
+
+                var index1 = @floatToInt(usize, position);
+                var index2 = index1 + 1;
+                if (index2 == buffer_length) {
+                    index2 = 0;
+                }
+
+                const x1 = @floatCast(f64, self.buffer_l[index1]);
+                const x2 = @floatCast(f64, self.buffer_l[index2]);
+                const a = position - @intToFloat(f64, index1);
+                output_left[t] = @floatCast(f32, x1 + a * (x2 - x1));
+
+                self.buffer_l[self.buffer_index_l] = input_left[t];
+                self.buffer_index_l += 1;
+                if (self.buffer_index_l == buffer_length) {
+                    self.buffer_index_l = 0;
+                }
+
+                self.delay_table_index_l += 1;
+                if (self.delay_table_index_l == delay_table_length) {
+                    self.delay_table_index_l = 0;
+                }
+            }
+        }
+
+        {
+            var t: usize = 0;
+            while (t < input_length) : (t += 1) {
+                var position = @intToFloat(f64, self.buffer_index_r) - @floatCast(f64, self.delay_table[self.delay_table_index_r]);
+                if (position < 0.0) {
+                    position += @intToFloat(f64, buffer_length);
+                }
+
+                var index1 = @floatToInt(usize, position);
+                var index2 = index1 + 1;
+                if (index2 == buffer_length) {
+                    index2 = 0;
+                }
+
+                const x1 = @floatCast(f64, self.buffer_r[index1]);
+                const x2 = @floatCast(f64, self.buffer_r[index2]);
+                const a = position - @intToFloat(f64, index1);
+                output_right[t] = @floatCast(f32, x1 + a * (x2 - x1));
+
+                self.buffer_r[self.buffer_index_r] = input_right[t];
+                self.buffer_index_r += 1;
+                if (self.buffer_index_r == buffer_length) {
+                    self.buffer_index_r = 0;
+                }
+
+                self.delay_table_index_r += 1;
+                if (self.delay_table_index_r == delay_table_length) {
+                    self.delay_table_index_r = 0;
+                }
+            }
+        }
+    }
+
+    fn mute(self: *Self) void {
+        const buffer_length = self.buffer_l.len;
+
+        {
+            var t: usize = 0;
+            while (t < buffer_length) : (t += 1) {
+                self.buffer_l[t] = 0.0;
+            }
+        }
+
+        {
+            var t: usize = 0;
+            while (t < buffer_length) : (t += 1) {
+                self.buffer_r[t] = 0.0;
+            }
         }
     }
 };
