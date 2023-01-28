@@ -1921,8 +1921,8 @@ pub const Synthesizer = struct {
                 var i: usize = 0;
                 while (i < self.voices.active_voice_count) : (i += 1) {
                     const voice = &self.voices.voices[i];
-                    const previous_gain = reverb.get_input_gain() * voice.previous_reverb_send * (voice.previous_mix_gain_left + voice.previous_mix_gain_right);
-                    const current_gain = reverb.get_input_gain() * voice.current_reverb_send * (voice.current_mix_gain_left + voice.current_mix_gain_right);
+                    const previous_gain = reverb.getInputGain() * voice.previous_reverb_send * (voice.previous_mix_gain_left + voice.previous_mix_gain_right);
+                    const current_gain = reverb.getInputGain() * voice.current_reverb_send * (voice.current_mix_gain_left + voice.current_mix_gain_right);
                     self.writeBlock(previous_gain, current_gain, voice.block, reverb_input);
                 }
             }
@@ -3877,30 +3877,30 @@ const Reverb = struct {
     fn init(allocator: Allocator, sample_rate: i32) !Self {
         // zig-format off
         const total_buffer_length =
-            scale_tuning(sample_rate, CF_TUNING_L1) +
-            scale_tuning(sample_rate, CF_TUNING_R1) +
-            scale_tuning(sample_rate, CF_TUNING_L2) +
-            scale_tuning(sample_rate, CF_TUNING_R2) +
-            scale_tuning(sample_rate, CF_TUNING_L3) +
-            scale_tuning(sample_rate, CF_TUNING_R3) +
-            scale_tuning(sample_rate, CF_TUNING_L4) +
-            scale_tuning(sample_rate, CF_TUNING_R4) +
-            scale_tuning(sample_rate, CF_TUNING_L5) +
-            scale_tuning(sample_rate, CF_TUNING_R5) +
-            scale_tuning(sample_rate, CF_TUNING_L6) +
-            scale_tuning(sample_rate, CF_TUNING_R6) +
-            scale_tuning(sample_rate, CF_TUNING_L7) +
-            scale_tuning(sample_rate, CF_TUNING_R7) +
-            scale_tuning(sample_rate, CF_TUNING_L8) +
-            scale_tuning(sample_rate, CF_TUNING_R8) +
-            scale_tuning(sample_rate, APF_TUNING_L1) +
-            scale_tuning(sample_rate, APF_TUNING_R1) +
-            scale_tuning(sample_rate, APF_TUNING_L2) +
-            scale_tuning(sample_rate, APF_TUNING_R2) +
-            scale_tuning(sample_rate, APF_TUNING_L3) +
-            scale_tuning(sample_rate, APF_TUNING_R3) +
-            scale_tuning(sample_rate, APF_TUNING_L4) +
-            scale_tuning(sample_rate, APF_TUNING_R4);
+            scaleTuning(sample_rate, CF_TUNING_L1) +
+            scaleTuning(sample_rate, CF_TUNING_R1) +
+            scaleTuning(sample_rate, CF_TUNING_L2) +
+            scaleTuning(sample_rate, CF_TUNING_R2) +
+            scaleTuning(sample_rate, CF_TUNING_L3) +
+            scaleTuning(sample_rate, CF_TUNING_R3) +
+            scaleTuning(sample_rate, CF_TUNING_L4) +
+            scaleTuning(sample_rate, CF_TUNING_R4) +
+            scaleTuning(sample_rate, CF_TUNING_L5) +
+            scaleTuning(sample_rate, CF_TUNING_R5) +
+            scaleTuning(sample_rate, CF_TUNING_L6) +
+            scaleTuning(sample_rate, CF_TUNING_R6) +
+            scaleTuning(sample_rate, CF_TUNING_L7) +
+            scaleTuning(sample_rate, CF_TUNING_R7) +
+            scaleTuning(sample_rate, CF_TUNING_L8) +
+            scaleTuning(sample_rate, CF_TUNING_R8) +
+            scaleTuning(sample_rate, APF_TUNING_L1) +
+            scaleTuning(sample_rate, APF_TUNING_R1) +
+            scaleTuning(sample_rate, APF_TUNING_L2) +
+            scaleTuning(sample_rate, APF_TUNING_R2) +
+            scaleTuning(sample_rate, APF_TUNING_L3) +
+            scaleTuning(sample_rate, APF_TUNING_R3) +
+            scaleTuning(sample_rate, APF_TUNING_L4) +
+            scaleTuning(sample_rate, APF_TUNING_R4);
         // zig-format on
 
         var buffer = try allocator.alloc(f32, total_buffer_length);
@@ -3912,57 +3912,57 @@ const Reverb = struct {
         var apfs_r = mem.zeroes([4]AllPassFilter);
         var p: usize = 0;
 
-        cfs_l[0] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L1))]);
-        p += scale_tuning(sample_rate, CF_TUNING_L1);
-        cfs_l[1] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L2))]);
-        p += scale_tuning(sample_rate, CF_TUNING_L2);
-        cfs_l[2] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L3))]);
-        p += scale_tuning(sample_rate, CF_TUNING_L3);
-        cfs_l[3] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L4))]);
-        p += scale_tuning(sample_rate, CF_TUNING_L4);
-        cfs_l[4] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L5))]);
-        p += scale_tuning(sample_rate, CF_TUNING_L5);
-        cfs_l[5] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L6))]);
-        p += scale_tuning(sample_rate, CF_TUNING_L6);
-        cfs_l[6] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L7))]);
-        p += scale_tuning(sample_rate, CF_TUNING_L7);
-        cfs_l[7] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_L8))]);
-        p += scale_tuning(sample_rate, CF_TUNING_L8);
+        cfs_l[0] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_L1))]);
+        p += scaleTuning(sample_rate, CF_TUNING_L1);
+        cfs_l[1] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_L2))]);
+        p += scaleTuning(sample_rate, CF_TUNING_L2);
+        cfs_l[2] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_L3))]);
+        p += scaleTuning(sample_rate, CF_TUNING_L3);
+        cfs_l[3] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_L4))]);
+        p += scaleTuning(sample_rate, CF_TUNING_L4);
+        cfs_l[4] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_L5))]);
+        p += scaleTuning(sample_rate, CF_TUNING_L5);
+        cfs_l[5] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_L6))]);
+        p += scaleTuning(sample_rate, CF_TUNING_L6);
+        cfs_l[6] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_L7))]);
+        p += scaleTuning(sample_rate, CF_TUNING_L7);
+        cfs_l[7] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_L8))]);
+        p += scaleTuning(sample_rate, CF_TUNING_L8);
 
-        cfs_r[0] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R1))]);
-        p += scale_tuning(sample_rate, CF_TUNING_R1);
-        cfs_r[1] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R2))]);
-        p += scale_tuning(sample_rate, CF_TUNING_R2);
-        cfs_r[2] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R3))]);
-        p += scale_tuning(sample_rate, CF_TUNING_R3);
-        cfs_r[3] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R4))]);
-        p += scale_tuning(sample_rate, CF_TUNING_R4);
-        cfs_r[4] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R5))]);
-        p += scale_tuning(sample_rate, CF_TUNING_R5);
-        cfs_r[5] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R6))]);
-        p += scale_tuning(sample_rate, CF_TUNING_R6);
-        cfs_r[6] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R7))]);
-        p += scale_tuning(sample_rate, CF_TUNING_R7);
-        cfs_r[7] = CombFilter.init(buffer[p..(p + scale_tuning(sample_rate, CF_TUNING_R8))]);
-        p += scale_tuning(sample_rate, CF_TUNING_R8);
+        cfs_r[0] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_R1))]);
+        p += scaleTuning(sample_rate, CF_TUNING_R1);
+        cfs_r[1] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_R2))]);
+        p += scaleTuning(sample_rate, CF_TUNING_R2);
+        cfs_r[2] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_R3))]);
+        p += scaleTuning(sample_rate, CF_TUNING_R3);
+        cfs_r[3] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_R4))]);
+        p += scaleTuning(sample_rate, CF_TUNING_R4);
+        cfs_r[4] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_R5))]);
+        p += scaleTuning(sample_rate, CF_TUNING_R5);
+        cfs_r[5] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_R6))]);
+        p += scaleTuning(sample_rate, CF_TUNING_R6);
+        cfs_r[6] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_R7))]);
+        p += scaleTuning(sample_rate, CF_TUNING_R7);
+        cfs_r[7] = CombFilter.init(buffer[p..(p + scaleTuning(sample_rate, CF_TUNING_R8))]);
+        p += scaleTuning(sample_rate, CF_TUNING_R8);
 
-        apfs_l[0] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_L1))]);
-        p += scale_tuning(sample_rate, APF_TUNING_L1);
-        apfs_l[1] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_L2))]);
-        p += scale_tuning(sample_rate, APF_TUNING_L2);
-        apfs_l[2] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_L3))]);
-        p += scale_tuning(sample_rate, APF_TUNING_L3);
-        apfs_l[3] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_L4))]);
-        p += scale_tuning(sample_rate, APF_TUNING_L4);
+        apfs_l[0] = AllPassFilter.init(buffer[p..(p + scaleTuning(sample_rate, APF_TUNING_L1))]);
+        p += scaleTuning(sample_rate, APF_TUNING_L1);
+        apfs_l[1] = AllPassFilter.init(buffer[p..(p + scaleTuning(sample_rate, APF_TUNING_L2))]);
+        p += scaleTuning(sample_rate, APF_TUNING_L2);
+        apfs_l[2] = AllPassFilter.init(buffer[p..(p + scaleTuning(sample_rate, APF_TUNING_L3))]);
+        p += scaleTuning(sample_rate, APF_TUNING_L3);
+        apfs_l[3] = AllPassFilter.init(buffer[p..(p + scaleTuning(sample_rate, APF_TUNING_L4))]);
+        p += scaleTuning(sample_rate, APF_TUNING_L4);
 
-        apfs_r[0] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_R1))]);
-        p += scale_tuning(sample_rate, APF_TUNING_R1);
-        apfs_r[1] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_R2))]);
-        p += scale_tuning(sample_rate, APF_TUNING_R2);
-        apfs_r[2] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_R3))]);
-        p += scale_tuning(sample_rate, APF_TUNING_R3);
-        apfs_r[3] = AllPassFilter.init(buffer[p..(p + scale_tuning(sample_rate, APF_TUNING_R4))]);
-        p += scale_tuning(sample_rate, APF_TUNING_R4);
+        apfs_r[0] = AllPassFilter.init(buffer[p..(p + scaleTuning(sample_rate, APF_TUNING_R1))]);
+        p += scaleTuning(sample_rate, APF_TUNING_R1);
+        apfs_r[1] = AllPassFilter.init(buffer[p..(p + scaleTuning(sample_rate, APF_TUNING_R2))]);
+        p += scaleTuning(sample_rate, APF_TUNING_R2);
+        apfs_r[2] = AllPassFilter.init(buffer[p..(p + scaleTuning(sample_rate, APF_TUNING_R3))]);
+        p += scaleTuning(sample_rate, APF_TUNING_R3);
+        apfs_r[3] = AllPassFilter.init(buffer[p..(p + scaleTuning(sample_rate, APF_TUNING_R4))]);
+        p += scaleTuning(sample_rate, APF_TUNING_R4);
 
         if (p != total_buffer_length) {
             unreachable;
@@ -3971,14 +3971,14 @@ const Reverb = struct {
         {
             var i: usize = 0;
             while (i < apfs_l.len) : (i += 1) {
-                apfs_l[i].set_feedback(0.5);
+                apfs_l[i].setFeedback(0.5);
             }
         }
 
         {
             var i: usize = 0;
             while (i < apfs_r.len) : (i += 1) {
-                apfs_r[i].set_feedback(0.5);
+                apfs_r[i].setFeedback(0.5);
             }
         }
 
@@ -4000,10 +4000,10 @@ const Reverb = struct {
             .width = 0.0,
         };
 
-        reverb.set_wet(Reverb.INITIAL_WET);
-        reverb.set_room_size(Reverb.INITIAL_ROOM);
-        reverb.set_damp(Reverb.INITIAL_DAMP);
-        reverb.set_width(Reverb.INITIAL_WIDTH);
+        reverb.setWet(Reverb.INITIAL_WET);
+        reverb.setRoomSize(Reverb.INITIAL_ROOM);
+        reverb.setDamp(Reverb.INITIAL_DAMP);
+        reverb.setWidth(Reverb.INITIAL_WIDTH);
 
         return reverb;
     }
@@ -4042,7 +4042,7 @@ const Reverb = struct {
         }
     }
 
-    fn scale_tuning(sample_rate: i32, tuning: usize) usize {
+    fn scaleTuning(sample_rate: i32, tuning: usize) usize {
         return @floatToInt(usize, @round(@intToFloat(f64, sample_rate) / 44100.0 * @intToFloat(f64, tuning)));
     }
 
@@ -4113,40 +4113,40 @@ const Reverb = struct {
         {
             var i: usize = 0;
             while (i < self.cfs_l.len) : (i += 1) {
-                self.cfs_l[i].set_feedback(self.room_size1);
-                self.cfs_l[i].set_damp(self.damp1);
+                self.cfs_l[i].setFeedback(self.room_size1);
+                self.cfs_l[i].setDamp(self.damp1);
             }
         }
 
         {
             var i: usize = 0;
             while (i < self.cfs_r.len) : (i += 1) {
-                self.cfs_r[i].set_feedback(self.room_size1);
-                self.cfs_r[i].set_damp(self.damp1);
+                self.cfs_r[i].setFeedback(self.room_size1);
+                self.cfs_r[i].setDamp(self.damp1);
             }
         }
     }
 
-    fn get_input_gain(self: *const Self) f32 {
+    fn getInputGain(self: *const Self) f32 {
         return self.gain;
     }
 
-    fn set_room_size(self: *Self, value: f32) void {
+    fn setRoomSize(self: *Self, value: f32) void {
         self.room_size = (value * Reverb.SCALE_ROOM) + Reverb.OFFSET_ROOM;
         self.update();
     }
 
-    fn set_damp(self: *Self, value: f32) void {
+    fn setDamp(self: *Self, value: f32) void {
         self.damp = value * Reverb.SCALE_DAMP;
         self.update();
     }
 
-    fn set_wet(self: *Self, value: f32) void {
+    fn setWet(self: *Self, value: f32) void {
         self.wet = value * Reverb.SCALE_WET;
         self.update();
     }
 
-    fn set_width(self: *Self, value: f32) void {
+    fn setWidth(self: *Self, value: f32) void {
         self.width = value;
         self.update();
     }
@@ -4229,11 +4229,11 @@ const CombFilter = struct {
         }
     }
 
-    fn set_feedback(self: *Self, value: f32) void {
+    fn setFeedback(self: *Self, value: f32) void {
         self.feedback = value;
     }
 
-    fn set_damp(self: *Self, value: f32) void {
+    fn setDamp(self: *Self, value: f32) void {
         self.damp1 = value;
         self.damp2 = 1.0 - value;
     }
@@ -4298,7 +4298,7 @@ const AllPassFilter = struct {
         }
     }
 
-    fn set_feedback(self: *Self, value: f32) void {
+    fn setFeedback(self: *Self, value: f32) void {
         self.feedback = value;
     }
 };
