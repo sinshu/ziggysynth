@@ -23,6 +23,17 @@ https://www.youtube.com/watch?v=GQj3tF8OdPw
 
 ## Examples
 
+Some useful aliases:
+
+```zig
+const ziggysynth = @import("ziggysynth.zig");
+const SoundFont = ziggysynth.SoundFont;
+const Synthesizer = ziggysynth.Synthesizer;
+const SynthesizerSettings = ziggysynth.SynthesizerSettings;
+const MidiFile = ziggysynth.MidiFile;
+const MidiFileSequencer = ziggysynth.MidiFileSequencer;
+```
+
 An example code to synthesize a simple chord:
 
 ```zig
