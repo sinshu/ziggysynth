@@ -16,6 +16,7 @@ zig-out/
 /build/
 /build-*/
 /docgen_tmp/
+/docs/
 
 # Audio related files
 *.sf2
