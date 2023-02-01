@@ -4004,6 +4004,7 @@ const Reverb = struct {
         reverb.setRoomSize(Reverb.INITIAL_ROOM);
         reverb.setDamp(Reverb.INITIAL_DAMP);
         reverb.setWidth(Reverb.INITIAL_WIDTH);
+        reverb.mute();
 
         return reverb;
     }
