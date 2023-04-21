@@ -18,6 +18,11 @@ zig-out/
 /docgen_tmp/
 /docs/
 
+# Build outputs 
+*.exe
+*.obj
+*.pdb
+
 # Audio related files
 *.sf2
 *.pcm

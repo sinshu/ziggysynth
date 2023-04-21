@@ -85,8 +85,7 @@ var midi_file = try MidiFile.init(allocator, mid.reader());
 defer midi_file.deinit();
 
 // Create the sequencer.
-var sequencer = try MidiFileSequencer.init(allocator, synthesizer);
-defer sequencer.deinit();
+var sequencer = MidiFileSequencer.init(&synthesizer);
 
 // Play the MIDI file.
 sequencer.play(midi_file, false);

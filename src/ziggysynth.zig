@@ -1481,18 +1481,16 @@ const LoopMode = struct {
 pub const Synthesizer = struct {
     const Self = @This();
 
-    const CHANNEL_COUNT: i32 = 16;
-    const PERCUSSION_CHANNEL: i32 = 9;
+    const CHANNEL_COUNT: usize = 16;
+    const PERCUSSION_CHANNEL: usize = 9;
 
     allocator: Allocator,
 
     sound_font: SoundFont,
     sample_rate: i32,
-    block_size: i32,
-    maximum_polyphony: i32,
+    block_size: usize,
+    maximum_polyphony: usize,
     enable_reverb_and_chorus: bool,
-
-    minimum_voice_length: i32,
 
     preset_lookup: AutoHashMap(i32, *Preset),
     default_preset: *Preset,
@@ -1523,8 +1521,6 @@ pub const Synthesizer = struct {
 
     pub fn init(allocator: Allocator, sound_font: SoundFont, settings: SynthesizerSettings) !Self {
         try settings.validate();
-
-        const minimum_voice_length = @divTrunc(settings.sample_rate, 500);
 
         var preset_lookup: AutoHashMap(i32, *Preset) = AutoHashMap(i32, *Preset).init(allocator);
         errdefer preset_lookup.deinit();
@@ -1618,7 +1614,6 @@ pub const Synthesizer = struct {
             .block_size = settings.block_size,
             .maximum_polyphony = settings.maximum_polyphony,
             .enable_reverb_and_chorus = settings.enable_reverb_and_chorus,
-            .minimum_voice_length = minimum_voice_length,
             .preset_lookup = preset_lookup,
             .default_preset = default_preset.?,
             .channels = channels,
@@ -1950,12 +1945,12 @@ pub const SynthesizerSettings = struct {
     const Self = @This();
 
     const DEFAULT_BLOCK_SIZE: i32 = 64;
-    const DEFAULT_MAXIMUM_POLYPHONY: i32 = 64;
+    const DEFAULT_MAXIMUM_POLYPHONY: usize = 64;
     const DEFAULT_ENABLE_REVERB_AND_CHORUS: bool = true;
 
     sample_rate: i32,
-    block_size: i32,
-    maximum_polyphony: i32,
+    block_size: usize,
+    maximum_polyphony: usize,
     enable_reverb_and_chorus: bool,
 
     pub fn init(sample_rate: i32) Self {
@@ -1979,13 +1974,13 @@ pub const SynthesizerSettings = struct {
         }
     }
 
-    fn checkBlockSize(value: i32) !void {
+    fn checkBlockSize(value: usize) !void {
         if (!(8 <= value and value <= 1024)) {
             return ZiggySynthError.BlockSizeIsOutOfRange;
         }
     }
 
-    fn checkMaximumPolyphony(value: i32) !void {
+    fn checkMaximumPolyphony(value: usize) !void {
         if (!(8 <= value and value <= 256)) {
             return ZiggySynthError.MaximumPolyphonyIsOutOfRange;
         }
@@ -2251,7 +2246,7 @@ const Voice = struct {
     const RELEASED: i32 = 2;
 
     sample_rate: i32,
-    block_size: i32,
+    block_size: usize,
 
     vol_env: VolumeEnvelope,
     mod_env: ModulationEnvelope,
@@ -2309,8 +2304,8 @@ const Voice = struct {
     smoothed_cutoff: f32,
 
     voice_state: i32,
-    voice_length: i32,
-    minimum_voice_length: i32,
+    voice_length: usize,
+    minimum_voice_length: usize,
 
     fn init(settings: *const SynthesizerSettings, block: []f32) Self {
         return Self{
@@ -2352,7 +2347,7 @@ const Voice = struct {
             .smoothed_cutoff = 0.0,
             .voice_state = 0,
             .voice_length = 0,
-            .minimum_voice_length = @divTrunc(settings.sample_rate, 500),
+            .minimum_voice_length = @intCast(usize, @divTrunc(settings.sample_rate, 500)),
         };
     }
 
@@ -2526,7 +2521,7 @@ const VoiceCollection = struct {
 
     block_buffer: []f32,
     voices: []Voice,
-    active_voice_count: i32,
+    active_voice_count: usize,
 
     fn init(allocator: Allocator, settings: *const SynthesizerSettings) !Self {
         var block_buffer = try allocator.alloc(f32, @intCast(usize, settings.block_size * settings.maximum_polyphony));
@@ -2572,7 +2567,7 @@ const VoiceCollection = struct {
 
         // If the number of active voices is less than the limit, use a free one.
         if (self.active_voice_count < self.voices.len) {
-            var free = &self.voices[@intCast(usize, self.active_voice_count)];
+            var free = &self.voices[self.active_voice_count];
             self.active_voice_count += 1;
             return free;
         }
@@ -2613,10 +2608,14 @@ const VoiceCollection = struct {
                 self.active_voice_count -= 1;
 
                 var tmp = self.voices[i];
-                self.voices[i] = self.voices[@intCast(usize, self.active_voice_count)];
-                self.voices[@intCast(usize, self.active_voice_count)] = tmp;
+                self.voices[i] = self.voices[self.active_voice_count];
+                self.voices[self.active_voice_count] = tmp;
             }
         }
+    }
+
+    fn getActiveVoices(self: *Self) []Voice {
+        return self.voices[0..self.active_voice_count];
     }
 
     fn clear(self: *Self) void {
@@ -2902,7 +2901,7 @@ const VolumeEnvelope = struct {
     sustain_level: f32,
     release_level: f32,
 
-    processed_sample_count: i32,
+    processed_sample_count: usize,
     stage: i32,
     value: f32,
 
@@ -2953,7 +2952,7 @@ const VolumeEnvelope = struct {
         self.release_level = self.value;
     }
 
-    fn processUnit(self: *Self, sample_count: i32) bool {
+    fn processUnit(self: *Self, sample_count: usize) bool {
         self.processed_sample_count += sample_count;
 
         const current_time = @intToFloat(f64, self.processed_sample_count) / @intToFloat(f64, self.sample_rate);
@@ -3026,7 +3025,7 @@ const ModulationEnvelope = struct {
     sustain_level: f32,
     release_level: f32,
 
-    processed_sample_count: i32,
+    processed_sample_count: usize,
     stage: i32,
     value: f32,
 
@@ -3077,7 +3076,7 @@ const ModulationEnvelope = struct {
         self.release_level = self.value;
     }
 
-    fn processUnit(self: *Self, sample_count: i32) bool {
+    fn processUnit(self: *Self, sample_count: usize) bool {
         self.processed_sample_count += sample_count;
 
         const current_time = @intToFloat(f64, self.processed_sample_count) / @intToFloat(f64, self.sample_rate);
@@ -3134,14 +3133,14 @@ const Lfo = struct {
     const Self = @This();
 
     sample_rate: i32,
-    block_size: i32,
+    block_size: usize,
 
     active: bool,
 
     delay: f64,
     period: f64,
 
-    processed_sample_count: i32,
+    processed_sample_count: usize,
     value: f32,
 
     fn init(settings: *const SynthesizerSettings) Self {
@@ -3711,9 +3710,7 @@ pub const MidiFile = struct {
 pub const MidiFileSequencer = struct {
     const Self = @This();
 
-    allocator: Allocator,
-
-    synthesizer: Synthesizer,
+    synthesizer: *Synthesizer,
 
     midi_file: ?MidiFile,
     play_loop: bool,
@@ -3723,32 +3720,15 @@ pub const MidiFileSequencer = struct {
     current_time: f64,
     msg_index: usize,
 
-    block_left: []f32,
-    block_right: []f32,
-
-    pub fn init(allocator: Allocator, synthesizer: Synthesizer) !Self {
-        const block_left = try allocator.alloc(f32, @intCast(usize, synthesizer.block_size));
-        errdefer allocator.free(block_left);
-
-        const block_right = try allocator.alloc(f32, @intCast(usize, synthesizer.block_size));
-        errdefer allocator.free(block_right);
-
+    pub fn init(synthesizer: *Synthesizer) Self {
         return Self{
-            .allocator = allocator,
             .synthesizer = synthesizer,
             .midi_file = null,
             .play_loop = false,
             .block_wrote = 0,
             .current_time = 0.0,
             .msg_index = 0,
-            .block_left = block_left,
-            .block_right = block_right,
         };
-    }
-
-    pub fn deinit(self: *Self) void {
-        self.allocator.free(self.block_right);
-        self.allocator.free(self.block_left);
     }
 
     pub fn play(self: *Self, midi_file: MidiFile, play_loop: bool) void {
