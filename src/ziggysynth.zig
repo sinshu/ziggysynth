@@ -4122,8 +4122,7 @@ const Chorus = struct {
 
     delay_table: []f32,
 
-    buffer_index_l: usize,
-    buffer_index_r: usize,
+    buffer_index: usize,
 
     delay_table_index_l: usize,
     delay_table_index_r: usize,
@@ -4138,16 +4137,12 @@ const Chorus = struct {
         const delay_table_length = @floatToInt(usize, @round(@intToFloat(f64, sample_rate) / frequency));
         var delay_table = try allocator.alloc(f32, delay_table_length);
         errdefer allocator.free(delay_table);
-        {
-            var t: usize = 0;
-            while (t < delay_table_length) : (t += 1) {
-                const phase = 2.0 * math.pi * @intToFloat(f64, t) / @intToFloat(f64, delay_table_length);
-                delay_table[t] = @floatCast(f32, @intToFloat(f64, sample_rate) * (delay + depth * @sin(phase)));
-            }
+        for (0..delay_table_length) |t| {
+            const phase = 2.0 * math.pi * @intToFloat(f64, t) / @intToFloat(f64, delay_table_length);
+            delay_table[t] = @floatCast(f32, @intToFloat(f64, sample_rate) * (delay + depth * @sin(phase)));
         }
 
-        const buffer_index_l: usize = 0;
-        const buffer_index_r: usize = 0;
+        const buffer_index: usize = 0;
 
         const delay_table_index_l: usize = 0;
         const delay_table_index_r: usize = delay_table_length / 4;
@@ -4157,8 +4152,7 @@ const Chorus = struct {
             .buffer_l = buffer_l,
             .buffer_r = buffer_r,
             .delay_table = delay_table,
-            .buffer_index_l = buffer_index_l,
-            .buffer_index_r = buffer_index_r,
+            .buffer_index = buffer_index,
             .delay_table_index_l = delay_table_index_l,
             .delay_table_index_r = delay_table_index_r,
         };
@@ -4179,10 +4173,9 @@ const Chorus = struct {
         const delay_table_length = self.delay_table.len;
         const input_length = input_left.len;
 
-        {
-            var t: usize = 0;
-            while (t < input_length) : (t += 1) {
-                var position = @intToFloat(f64, self.buffer_index_l) - @floatCast(f64, self.delay_table[self.delay_table_index_l]);
+        for (0..input_length) |t| {
+            {
+                var position = @intToFloat(f64, self.buffer_index) - @floatCast(f64, self.delay_table[self.delay_table_index_l]);
                 if (position < 0.0) {
                     position += @intToFloat(f64, buffer_length);
                 }
@@ -4198,23 +4191,14 @@ const Chorus = struct {
                 const a = position - @intToFloat(f64, index1);
                 output_left[t] = @floatCast(f32, x1 + a * (x2 - x1));
 
-                self.buffer_l[self.buffer_index_l] = input_left[t];
-                self.buffer_index_l += 1;
-                if (self.buffer_index_l == buffer_length) {
-                    self.buffer_index_l = 0;
-                }
-
                 self.delay_table_index_l += 1;
                 if (self.delay_table_index_l == delay_table_length) {
                     self.delay_table_index_l = 0;
                 }
             }
-        }
 
-        {
-            var t: usize = 0;
-            while (t < input_length) : (t += 1) {
-                var position = @intToFloat(f64, self.buffer_index_r) - @floatCast(f64, self.delay_table[self.delay_table_index_r]);
+            {
+                var position = @intToFloat(f64, self.buffer_index) - @floatCast(f64, self.delay_table[self.delay_table_index_r]);
                 if (position < 0.0) {
                     position += @intToFloat(f64, buffer_length);
                 }
@@ -4230,16 +4214,17 @@ const Chorus = struct {
                 const a = position - @intToFloat(f64, index1);
                 output_right[t] = @floatCast(f32, x1 + a * (x2 - x1));
 
-                self.buffer_r[self.buffer_index_r] = input_right[t];
-                self.buffer_index_r += 1;
-                if (self.buffer_index_r == buffer_length) {
-                    self.buffer_index_r = 0;
-                }
-
                 self.delay_table_index_r += 1;
                 if (self.delay_table_index_r == delay_table_length) {
                     self.delay_table_index_r = 0;
                 }
+            }
+
+            self.buffer_l[self.buffer_index] = input_left[t];
+            self.buffer_r[self.buffer_index] = input_right[t];
+            self.buffer_index += 1;
+            if (self.buffer_index == buffer_length) {
+                self.buffer_index = 0;
             }
         }
     }
