@@ -2441,9 +2441,7 @@ const VoiceCollection = struct {
 
         var voices = try allocator.alloc(Voice, @intCast(usize, settings.maximum_polyphony));
         errdefer allocator.free(voices);
-
-        var i: usize = 0;
-        while (i < voices.len) : (i += 1) {
+        for (0..voices.len) |i| {
             const buffer_start = @intCast(usize, settings.block_size) * i;
             const buffer_end = buffer_start + @intCast(usize, settings.block_size);
             var block = block_buffer[buffer_start..buffer_end];
@@ -2488,9 +2486,7 @@ const VoiceCollection = struct {
         // Find one which has the lowest priority.
         var candidate: ?*Voice = null;
         var lowest_priority: f32 = 1000000.0;
-        var i: usize = 0;
-        while (i < self.active_voice_count) : (i += 1) {
-            var voice = &self.voices[i];
+        for (self.getActiveVoices()) |*voice| {
             var priority = voice.getPriority();
             if (priority < lowest_priority) {
                 lowest_priority = priority;
