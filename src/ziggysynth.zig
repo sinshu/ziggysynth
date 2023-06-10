@@ -1789,16 +1789,12 @@ pub const Synthesizer = struct {
     }
 
     fn renderBlock(self: *Self) void {
-        const block_size = @intCast(usize, self.block_size);
-        _ = block_size;
-
         self.voices.processUnit(self);
 
         for (self.block_left, self.block_right) |*left, *right| {
             left.* = 0.0;
             right.* = 0.0;
         }
-
         for (self.voices.getActiveVoices()) |*voice| {
             const previous_gain_left = self.master_volume * voice.previous_mix_gain_left;
             const current_gain_left = self.master_volume * voice.current_mix_gain_left;
