@@ -72,7 +72,7 @@ fn check(region: *const InstrumentRegion, values: *const [50]f64) void {
 test "TimGM6mb Instrument" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-    defer debug.assert(!gpa.deinit());
+    defer debug.assert(gpa.deinit() == .ok);
 
     var file = try std.fs.cwd().openFile("TimGM6mb.sf2", .{});
     defer file.close();

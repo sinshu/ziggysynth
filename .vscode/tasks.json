@@ -9,6 +9,15 @@
             "problemMatcher": [
                 "$gcc"
             ]
+        },
+        {
+            "label": "test",
+            "type": "shell",
+            "command": "zig build test",
+            "group": "test",
+            "problemMatcher": [
+                "$gcc"
+            ]
         }
     ]
 }

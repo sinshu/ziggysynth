@@ -19,7 +19,7 @@ pub fn main() !void {
 
     var gpa = heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-    defer debug.assert(!gpa.deinit());
+    defer debug.assert(gpa.deinit() == .ok);
 
     try stdout.print("Simple chord...", .{});
     try bw.flush();
