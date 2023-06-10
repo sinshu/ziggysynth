@@ -1487,33 +1487,25 @@ pub const Synthesizer = struct {
         errdefer preset_lookup.deinit();
         var min_preset_id: i32 = math.maxInt(i32);
         var default_preset: ?*Preset = null;
-        {
-            var i: usize = 0;
-            while (i < sound_font.presets.len) : (i += 1) {
-                const preset = &sound_font.presets[i];
+        for (sound_font.presets) |*preset| {
+            // The preset ID is Int32, where the upper 16 bits represent the bank number
+            // and the lower 16 bits represent the patch number.
+            // This ID is used to search for presets by the combination of bank number
+            // and patch number.
+            var preset_id = (preset.getBankNumber() << 16) | preset.getPatchNumber();
+            try preset_lookup.put(preset_id, preset);
 
-                // The preset ID is Int32, where the upper 16 bits represent the bank number
-                // and the lower 16 bits represent the patch number.
-                // This ID is used to search for presets by the combination of bank number
-                // and patch number.
-                var preset_id = (preset.getBankNumber() << 16) | preset.getPatchNumber();
-                try preset_lookup.put(preset_id, preset);
-
-                // The preset with the minimum ID number will be default.
-                // If the SoundFont is GM compatible, the piano will be chosen.
-                if (preset_id < min_preset_id) {
-                    default_preset = preset;
-                    min_preset_id = preset_id;
-                }
+            // The preset with the minimum ID number will be default.
+            // If the SoundFont is GM compatible, the piano will be chosen.
+            if (preset_id < min_preset_id) {
+                default_preset = preset;
+                min_preset_id = preset_id;
             }
         }
 
         var channels = mem.zeroes([Synthesizer.CHANNEL_COUNT]Channel);
-        {
-            var i: usize = 0;
-            while (i < channels.len) : (i += 1) {
-                channels[i] = Channel.init(i == Synthesizer.PERCUSSION_CHANNEL);
-            }
+        for (0..channels.len) |i| {
+            channels[i] = Channel.init(i == Synthesizer.PERCUSSION_CHANNEL);
         }
 
         var voices = try VoiceCollection.init(allocator, &settings);
@@ -1660,9 +1652,7 @@ pub const Synthesizer = struct {
             return;
         }
 
-        var i: usize = 0;
-        while (i < self.voices.active_voice_count) : (i += 1) {
-            var voice = &self.voices.voices[i];
+        for (self.voices.getActiveVoices()) |*voice| {
             if (voice.channel == channel and voice.key == key) {
                 voice.end();
             }
@@ -1699,14 +1689,10 @@ pub const Synthesizer = struct {
             }
         }
 
-        var pr: usize = 0;
-        while (pr < preset.regions.len) : (pr += 1) {
-            const preset_region = &preset.regions[pr];
+        for (preset.regions) |*preset_region| {
             if (preset_region.contains(key, velocity)) {
                 const instrument = preset_region.instrument;
-                var ir: usize = 0;
-                while (ir < instrument.regions.len) : (ir += 1) {
-                    const instrument_region = &instrument.regions[ir];
+                for (instrument.regions) |*instrument_region| {
                     if (instrument_region.contains(key, velocity)) {
                         var region_pair = RegionPair.init(preset_region, instrument_region);
 
@@ -1723,26 +1709,21 @@ pub const Synthesizer = struct {
         if (immediate) {
             self.voices.clear();
         } else {
-            var i: usize = 0;
-            while (i < self.voices.active_voice_count) : (i += 1) {
-                self.voices.voices[i].end();
+            for (self.voices.getActiveVoices()) |*voice| {
+                voice.end();
             }
         }
     }
 
     pub fn noteOffAllChannel(self: *Self, channel: i32, immediate: bool) void {
         if (immediate) {
-            var i: usize = 0;
-            while (i < self.voices.active_voice_count) : (i += 1) {
-                var voice = &self.voices.voices[i];
+            for (self.voices.getActiveVoices()) |*voice| {
                 if (voice.channel == channel) {
                     voice.kill();
                 }
             }
         } else {
-            var i: usize = 0;
-            while (i < self.voices.active_voice_count) : (i += 1) {
-                var voice = &self.voices.voices[i];
+            for (self.voices.getActiveVoices()) |*voice| {
                 if (voice.channel == channel) {
                     voice.end();
                 }
@@ -1751,9 +1732,8 @@ pub const Synthesizer = struct {
     }
 
     pub fn resetAllControllers(self: *Self) void {
-        var i: usize = 0;
-        while (i < self.channels.len) : (i += 1) {
-            self.channels[i].resetAllControllers();
+        for (&self.channels) |*channel| {
+            channel.resetAllControllers();
         }
     }
 
@@ -1768,9 +1748,8 @@ pub const Synthesizer = struct {
     pub fn reset(self: *Self) void {
         self.voices.clear();
 
-        var i: usize = 0;
-        while (i < self.channels.len) : (i += 1) {
-            self.channels[i].reset();
+        for (&self.channels) |*channel| {
+            channel.reset();
         }
 
         if (self.enable_reverb_and_chorus) {
@@ -1797,10 +1776,11 @@ pub const Synthesizer = struct {
             const dst_rem = left.len - wrote;
             const rem = @min(src_rem, dst_rem);
 
-            var t: usize = 0;
-            while (t < rem) : (t += 1) {
-                left[wrote + t] = self.block_left[self.block_read + t];
-                right[wrote + t] = self.block_right[self.block_read + t];
+            for (left[wrote .. wrote + rem], self.block_left[self.block_read .. self.block_read + rem]) |*dst, value| {
+                dst.* = value;
+            }
+            for (right[wrote .. wrote + rem], self.block_right[self.block_read .. self.block_read + rem]) |*dst, value| {
+                dst.* = value;
             }
 
             self.block_read += rem;
@@ -1810,28 +1790,22 @@ pub const Synthesizer = struct {
 
     fn renderBlock(self: *Self) void {
         const block_size = @intCast(usize, self.block_size);
+        _ = block_size;
 
         self.voices.processUnit(self);
 
-        {
-            var t: usize = 0;
-            while (t < block_size) : (t += 1) {
-                self.block_left[t] = 0.0;
-                self.block_right[t] = 0.0;
-            }
+        for (self.block_left, self.block_right) |*left, *right| {
+            left.* = 0.0;
+            right.* = 0.0;
         }
 
-        {
-            var i: usize = 0;
-            while (i < self.voices.active_voice_count) : (i += 1) {
-                const voice = &self.voices.voices[i];
-                const previous_gain_left = self.master_volume * voice.previous_mix_gain_left;
-                const current_gain_left = self.master_volume * voice.current_mix_gain_left;
-                self.writeBlock(previous_gain_left, current_gain_left, voice.block, self.block_left);
-                const previous_gain_right = self.master_volume * voice.previous_mix_gain_right;
-                const current_gain_right = self.master_volume * voice.current_mix_gain_right;
-                self.writeBlock(previous_gain_right, current_gain_right, voice.block, self.block_right);
-            }
+        for (self.voices.getActiveVoices()) |*voice| {
+            const previous_gain_left = self.master_volume * voice.previous_mix_gain_left;
+            const current_gain_left = self.master_volume * voice.current_mix_gain_left;
+            self.writeBlock(previous_gain_left, current_gain_left, voice.block, self.block_left);
+            const previous_gain_right = self.master_volume * voice.previous_mix_gain_right;
+            const current_gain_right = self.master_volume * voice.current_mix_gain_right;
+            self.writeBlock(previous_gain_right, current_gain_right, voice.block, self.block_right);
         }
 
         if (self.enable_reverb_and_chorus) {
@@ -1840,24 +1814,17 @@ pub const Synthesizer = struct {
             var chorus_input_right = self.chorus_input_right.?;
             var chorus_output_left = self.chorus_output_left.?;
             var chorus_output_right = self.chorus_output_right.?;
-            {
-                var t: usize = 0;
-                while (t < block_size) : (t += 1) {
-                    chorus_input_left[t] = 0.0;
-                    chorus_input_right[t] = 0.0;
-                }
+            for (chorus_input_left, chorus_input_right) |*left, *right| {
+                left.* = 0.0;
+                right.* = 0.0;
             }
-            {
-                var i: usize = 0;
-                while (i < self.voices.active_voice_count) : (i += 1) {
-                    const voice = &self.voices.voices[i];
-                    const previous_gain_left = voice.previous_chorus_send * voice.previous_mix_gain_left;
-                    const current_gain_left = voice.current_chorus_send * voice.current_mix_gain_left;
-                    self.writeBlock(previous_gain_left, current_gain_left, voice.block, chorus_input_left);
-                    const previous_gain_right = voice.previous_chorus_send * voice.previous_mix_gain_right;
-                    const current_gain_right = voice.current_chorus_send * voice.current_mix_gain_right;
-                    self.writeBlock(previous_gain_right, current_gain_right, voice.block, chorus_input_right);
-                }
+            for (self.voices.getActiveVoices()) |*voice| {
+                const previous_gain_left = voice.previous_chorus_send * voice.previous_mix_gain_left;
+                const current_gain_left = voice.current_chorus_send * voice.current_mix_gain_left;
+                self.writeBlock(previous_gain_left, current_gain_left, voice.block, chorus_input_left);
+                const previous_gain_right = voice.previous_chorus_send * voice.previous_mix_gain_right;
+                const current_gain_right = voice.current_chorus_send * voice.current_mix_gain_right;
+                self.writeBlock(previous_gain_right, current_gain_right, voice.block, chorus_input_right);
             }
             chorus.process(chorus_input_left, chorus_input_right, chorus_output_left, chorus_output_right);
             ArrayMath.multiplyAdd(self.master_volume, chorus_output_left, self.block_left);
@@ -1867,20 +1834,13 @@ pub const Synthesizer = struct {
             var reverb_input = self.reverb_input.?;
             var reverb_output_left = self.reverb_output_left.?;
             var reverb_output_right = self.reverb_output_right.?;
-            {
-                var t: usize = 0;
-                while (t < block_size) : (t += 1) {
-                    reverb_input[t] = 0.0;
-                }
+            for (reverb_input) |*value| {
+                value.* = 0.0;
             }
-            {
-                var i: usize = 0;
-                while (i < self.voices.active_voice_count) : (i += 1) {
-                    const voice = &self.voices.voices[i];
-                    const previous_gain = reverb.getInputGain() * voice.previous_reverb_send * (voice.previous_mix_gain_left + voice.previous_mix_gain_right);
-                    const current_gain = reverb.getInputGain() * voice.current_reverb_send * (voice.current_mix_gain_left + voice.current_mix_gain_right);
-                    self.writeBlock(previous_gain, current_gain, voice.block, reverb_input);
-                }
+            for (self.voices.getActiveVoices()) |*voice| {
+                const previous_gain = reverb.getInputGain() * voice.previous_reverb_send * (voice.previous_mix_gain_left + voice.previous_mix_gain_right);
+                const current_gain = reverb.getInputGain() * voice.current_reverb_send * (voice.current_mix_gain_left + voice.current_mix_gain_right);
+                self.writeBlock(previous_gain, current_gain, voice.block, reverb_input);
             }
             reverb.process(reverb_input, reverb_output_left, reverb_output_right);
             ArrayMath.multiplyAdd(self.master_volume, reverb_output_left, self.block_left);
