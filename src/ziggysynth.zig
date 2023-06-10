@@ -165,7 +165,6 @@ const SoundFontSampleData = struct {
         }
 
         const end = try BinaryReader.read(u32, reader);
-
         var pos: u32 = 0;
 
         const list_type = try BinaryReader.read([4]u8, reader);
@@ -239,7 +238,6 @@ const SoundFontParameters = struct {
         }
 
         const end = try BinaryReader.read(u32, reader);
-
         var pos: u32 = 0;
 
         const list_type = try BinaryReader.read([4]u8, reader);
@@ -1089,8 +1087,7 @@ pub const InstrumentRegion = struct {
         errdefer allocator.free(regions);
         var region_index: usize = 0;
 
-        var instrument_index: usize = 0;
-        while (instrument_index < instrument_count) : (instrument_index += 1) {
+        for (0..instrument_count) |instrument_index| {
             const info = infos[instrument_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
@@ -2511,7 +2508,6 @@ const VoiceCollection = struct {
 
     fn processUnit(self: *Self, synthesizer: *Synthesizer) void {
         var i: usize = 0;
-
         while (true) {
             if (i == self.active_voice_count) {
                 return;
@@ -2634,18 +2630,15 @@ const Oscillator = struct {
     }
 
     fn fillBlock_noLoop(self: *Self, block: []f32, pitch_ratio_fp: i64) bool {
-        const data_r = self.data.?;
-        const block_length = block.len;
+        const data = self.data.?;
 
-        var t: usize = 0;
-        while (t < block_length) : (t += 1) {
+        for (block, 0..block.len) |*dst, t| {
             const index = @bitCast(usize, self.position_fp >> Oscillator.FRAC_BITS);
 
             if (index >= self.end) {
                 if (t > 0) {
-                    var u = t;
-                    while (u < block_length) : (u += 1) {
-                        block[u] = 0.0;
+                    for (block[t..block.len]) |*dst2| {
+                        dst2.* = 0.0;
                     }
                     return true;
                 } else {
@@ -2653,10 +2646,10 @@ const Oscillator = struct {
                 }
             }
 
-            const x1 = @intCast(i64, data_r[index]);
-            const x2 = @intCast(i64, data_r[index + 1]);
+            const x1 = @intCast(i64, data[index]);
+            const x2 = @intCast(i64, data[index + 1]);
             const a_fp = self.position_fp & (Oscillator.FRAC_UNIT - 1);
-            block[t] = Oscillator.FP_TO_SAMPLE * @intToFloat(f32, (x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
+            dst.* = Oscillator.FP_TO_SAMPLE * @intToFloat(f32, (x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
 
             self.position_fp += pitch_ratio_fp;
         }
@@ -2665,31 +2658,26 @@ const Oscillator = struct {
     }
 
     fn fillBlock_continuous(self: *Self, block: []f32, pitch_ratio_fp: i64) bool {
-        const data_r = self.data.?;
-        const block_length = block.len;
-
+        const data = self.data.?;
         const end_loop_fp = @intCast(i64, self.end_loop) << Oscillator.FRAC_BITS;
-
         const loop_length = @intCast(usize, self.end_loop - self.start_loop);
         const loop_length_fp = @intCast(i64, loop_length) << Oscillator.FRAC_BITS;
 
-        var t: usize = 0;
-        while (t < block_length) : (t += 1) {
+        for (block) |*dst| {
             if (self.position_fp >= end_loop_fp) {
                 self.position_fp -= loop_length_fp;
             }
 
             const index1 = @bitCast(usize, self.position_fp >> Oscillator.FRAC_BITS);
             var index2 = index1 + 1;
-
             if (index2 >= self.end_loop) {
                 index2 -= loop_length;
             }
 
-            const x1 = @intCast(i64, data_r[index1]);
-            const x2 = @intCast(i64, data_r[index2]);
+            const x1 = @intCast(i64, data[index1]);
+            const x2 = @intCast(i64, data[index2]);
             const a_fp = self.position_fp & (Oscillator.FRAC_UNIT - 1);
-            block[t] = Oscillator.FP_TO_SAMPLE * @intToFloat(f32, (x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
+            dst.* = Oscillator.FP_TO_SAMPLE * @intToFloat(f32, (x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
 
             self.position_fp += pitch_ratio_fp;
         }
@@ -2767,11 +2755,8 @@ const BiQuadFilter = struct {
     }
 
     fn processUnit(self: *Self, block: []f32) void {
-        const block_length = block.len;
-
         if (self.active) {
-            var t: usize = 0;
-            while (t < block_length) : (t += 1) {
+            for (0..block.len) |t| {
                 const input = block[t];
                 const output = self.a0 * input + self.a1 * self.x1 + self.a2 * self.x2 - self.a3 * self.y1 - self.a4 * self.y2;
 
@@ -2783,8 +2768,8 @@ const BiQuadFilter = struct {
                 block[t] = output;
             }
         } else {
-            self.x2 = block[block_length - 2];
-            self.x1 = block[block_length - 1];
+            self.x2 = block[block.len - 2];
+            self.x1 = block[block.len - 1];
             self.y2 = self.x2;
             self.y1 = self.x1;
         }
