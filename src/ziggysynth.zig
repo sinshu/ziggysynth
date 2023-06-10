@@ -3402,38 +3402,23 @@ pub const MidiFile = struct {
         }
 
         var message_lists: [MidiFile.MAX_TRACK_COUNT]ArrayList(Message) = undefined;
-        {
-            var i: usize = 0;
-            while (i < track_count) : (i += 1) {
-                message_lists[i] = ArrayList(Message).init(allocator);
-            }
+        for (0..track_count) |i| {
+            message_lists[i] = ArrayList(Message).init(allocator);
         }
-        defer {
-            var i: usize = 0;
-            while (i < track_count) : (i += 1) {
-                message_lists[i].deinit();
-            }
-        }
+        defer for (0..track_count) |i| {
+            message_lists[i].deinit();
+        };
 
         var tick_lists: [MidiFile.MAX_TRACK_COUNT]ArrayList(i32) = undefined;
-        {
-            var i: usize = 0;
-            while (i < track_count) : (i += 1) {
-                tick_lists[i] = ArrayList(i32).init(allocator);
-            }
+        for (0..track_count) |i| {
+            tick_lists[i] = ArrayList(i32).init(allocator);
         }
-        defer {
-            var i: usize = 0;
-            while (i < track_count) : (i += 1) {
-                tick_lists[i].deinit();
-            }
-        }
+        defer for (0..track_count) |i| {
+            tick_lists[i].deinit();
+        };
 
-        {
-            var i: usize = 0;
-            while (i < track_count) : (i += 1) {
-                try MidiFile.readTrack(reader, &message_lists[i], &tick_lists[i]);
-            }
+        for (0..track_count) |i| {
+            try MidiFile.readTrack(reader, &message_lists[i], &tick_lists[i]);
         }
 
         return try MidiFile.mergeTracks(allocator, message_lists[0..track_count], tick_lists[0..track_count], resolution);
@@ -3528,8 +3513,7 @@ pub const MidiFile = struct {
             var min_tick: i32 = math.maxInt(i32);
             var min_index: i32 = -1;
 
-            var ch: usize = 0;
-            while (ch < tick_lists.len) : (ch += 1) {
+            for (0..tick_lists.len) |ch| {
                 if (indices[ch] < tick_lists[ch].items.len) {
                     const tick = tick_lists[ch].items[indices[ch]];
                     if (tick < min_tick) {
@@ -3567,8 +3551,7 @@ pub const MidiFile = struct {
         var times = try allocator.alloc(f64, merged_times.items.len);
         errdefer allocator.free(times);
 
-        var i: usize = 0;
-        while (i < messages.len) : (i += 1) {
+        for (0..messages.len) |i| {
             messages[i] = merged_messages.items[i];
             times[i] = merged_times.items[i];
         }
@@ -3844,18 +3827,12 @@ const Reverb = struct {
             unreachable;
         }
 
-        {
-            var i: usize = 0;
-            while (i < apfs_l.len) : (i += 1) {
-                apfs_l[i].setFeedback(0.5);
-            }
+        for (&apfs_l) |*apf| {
+            apf.setFeedback(0.5);
         }
 
-        {
-            var i: usize = 0;
-            while (i < apfs_r.len) : (i += 1) {
-                apfs_r[i].setFeedback(0.5);
-            }
+        for (&apfs_r) |*apf| {
+            apf.setFeedback(0.5);
         }
 
         var reverb = Self{
@@ -3890,32 +3867,20 @@ const Reverb = struct {
     }
 
     fn mute(self: *Self) void {
-        {
-            var i: usize = 0;
-            while (i < self.cfs_l.len) : (i += 1) {
-                self.cfs_l[i].mute();
-            }
+        for (&self.cfs_l) |*cf| {
+            cf.mute();
         }
 
-        {
-            var i: usize = 0;
-            while (i < self.cfs_r.len) : (i += 1) {
-                self.cfs_r[i].mute();
-            }
+        for (&self.cfs_r) |*cf| {
+            cf.mute();
         }
 
-        {
-            var i: usize = 0;
-            while (i < self.apfs_l.len) : (i += 1) {
-                self.apfs_l[i].mute();
-            }
+        for (&self.apfs_l) |*apf| {
+            apf.mute();
         }
 
-        {
-            var i: usize = 0;
-            while (i < self.apfs_r.len) : (i += 1) {
-                self.apfs_r[i].mute();
-            }
+        for (&self.apfs_r) |*apf| {
+            apf.mute();
         }
     }
 
@@ -3924,53 +3889,30 @@ const Reverb = struct {
     }
 
     fn process(self: *Self, input: []f32, output_left: []f32, output_right: []f32) void {
-        const length = input.len;
-
-        {
-            var i: usize = 0;
-            while (i < length) : (i += 1) {
-                output_left[i] = 0.0;
-            }
+        for (output_left) |*dst| {
+            dst.* = 0.0;
         }
-        {
-            var i: usize = 0;
-            while (i < length) : (i += 1) {
-                output_right[i] = 0.0;
-            }
+        for (output_right) |*dst| {
+            dst.* = 0.0;
         }
 
-        {
-            var i: usize = 0;
-            while (i < self.cfs_l.len) : (i += 1) {
-                self.cfs_l[i].process(input, output_left);
-            }
+        for (&self.cfs_l) |*cf| {
+            cf.process(input, output_left);
+        }
+        for (&self.apfs_l) |*apf| {
+            apf.process(output_left);
         }
 
-        {
-            var i: usize = 0;
-            while (i < self.apfs_l.len) : (i += 1) {
-                self.apfs_l[i].process(output_left);
-            }
+        for (&self.cfs_r) |*cf| {
+            cf.process(input, output_right);
         }
-
-        {
-            var i: usize = 0;
-            while (i < self.cfs_r.len) : (i += 1) {
-                self.cfs_r[i].process(input, output_right);
-            }
-        }
-
-        {
-            var i: usize = 0;
-            while (i < self.apfs_r.len) : (i += 1) {
-                self.apfs_r[i].process(output_right);
-            }
+        for (&self.apfs_r) |*apf| {
+            apf.process(output_right);
         }
 
         // With the default settings, we can skip this part.
         if (1.0 - self.wet1 > 1.0E-3 or self.wet2 > 1.0E-3) {
-            var t: usize = 0;
-            while (t < length) : (t += 1) {
+            for (0..input.len) |t| {
                 const left = output_left[t];
                 const right = output_right[t];
                 output_left[t] = left * self.wet1 + right * self.wet2;
@@ -3987,20 +3929,13 @@ const Reverb = struct {
         self.damp1 = self.damp;
         self.gain = Reverb.FIXED_GAIN;
 
-        {
-            var i: usize = 0;
-            while (i < self.cfs_l.len) : (i += 1) {
-                self.cfs_l[i].setFeedback(self.room_size1);
-                self.cfs_l[i].setDamp(self.damp1);
-            }
+        for (&self.cfs_l) |*cf| {
+            cf.setFeedback(self.room_size1);
+            cf.setDamp(self.damp1);
         }
-
-        {
-            var i: usize = 0;
-            while (i < self.cfs_r.len) : (i += 1) {
-                self.cfs_r[i].setFeedback(self.room_size1);
-                self.cfs_r[i].setDamp(self.damp1);
-            }
+        for (&self.cfs_r) |*cf| {
+            cf.setFeedback(self.room_size1);
+            cf.setDamp(self.damp1);
         }
     }
 
@@ -4075,8 +4010,7 @@ const CombFilter = struct {
             const dst_rem = output_block_length - block_index;
             const rem = @min(src_rem, dst_rem);
 
-            var t: usize = 0;
-            while (t < rem) : (t += 1) {
+            for (0..rem) |t| {
                 const block_pos = block_index + t;
                 const buffer_pos = self.buffer_index + t;
 
@@ -4134,9 +4068,8 @@ const AllPassFilter = struct {
     }
 
     fn mute(self: *Self) void {
-        var i: usize = 0;
-        while (i < self.buffer.len) : (i += 1) {
-            self.buffer[i] = 0.0;
+        for (self.buffer) |*value| {
+            value.* = 0.0;
         }
     }
 
@@ -4154,8 +4087,7 @@ const AllPassFilter = struct {
             const dst_rem = block_length - block_index;
             const rem = @min(src_rem, dst_rem);
 
-            var t: usize = 0;
-            while (t < rem) : (t += 1) {
+            for (0..rem) |t| {
                 const block_pos = block_index + t;
                 const buffer_pos = self.buffer_index + t;
 
@@ -4313,20 +4245,11 @@ const Chorus = struct {
     }
 
     fn mute(self: *Self) void {
-        const buffer_length = self.buffer_l.len;
-
-        {
-            var t: usize = 0;
-            while (t < buffer_length) : (t += 1) {
-                self.buffer_l[t] = 0.0;
-            }
+        for (self.buffer_l) |*value| {
+            value.* = 0.0;
         }
-
-        {
-            var t: usize = 0;
-            while (t < buffer_length) : (t += 1) {
-                self.buffer_r[t] = 0.0;
-            }
+        for (self.buffer_r) |*value| {
+            value.* = 0.0;
         }
     }
 };
