@@ -1097,15 +1097,13 @@ pub const InstrumentRegion = struct {
             // Is the first one the global zone?
             if (InstrumentRegion.containsGlobalZone(zones)) {
                 // The first one is the global zone.
-                var i: usize = 0;
-                while (i < zones.len - 1) : (i += 1) {
+                for (0..zones.len - 1) |i| {
                     regions[region_index] = try InstrumentRegion.init(&zones[0], &zones[i + 1], samples);
                     region_index += 1;
                 }
             } else {
                 // No global zone.
-                var i: usize = 0;
-                while (i < zones.len) : (i += 1) {
+                for (0..zones.len) |i| {
                     regions[region_index] = try InstrumentRegion.init(&Zone.empty(), &zones[i], samples);
                     region_index += 1;
                 }
