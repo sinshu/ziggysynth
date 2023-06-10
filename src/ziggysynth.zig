@@ -576,9 +576,8 @@ pub const Preset = struct {
         var presets = try allocator.alloc(Self, preset_count);
         errdefer allocator.free(presets);
 
-        var preset_index: usize = 0;
         var region_index: usize = 0;
-        while (preset_index < preset_count) : (preset_index += 1) {
+        for (0..preset_count) |preset_index| {
             const info = infos[preset_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
@@ -636,9 +635,7 @@ pub const PresetRegion = struct {
         const preset_count = infos.len - 1;
 
         var sum: usize = 0;
-
-        var preset_index: usize = 0;
-        while (preset_index < preset_count) : (preset_index += 1) {
+        for (0..preset_count) |preset_index| {
             const info = infos[preset_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
@@ -697,23 +694,20 @@ pub const PresetRegion = struct {
         errdefer allocator.free(regions);
         var region_index: usize = 0;
 
-        var preset_index: usize = 0;
-        while (preset_index < preset_count) : (preset_index += 1) {
+        for (0..preset_count) |preset_index| {
             const info = infos[preset_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
             // Is the first one the global zone?
             if (PresetRegion.containsGlobalZone(zones)) {
                 // The first one is the global zone.
-                var i: usize = 0;
-                while (i < zones.len - 1) : (i += 1) {
+                for (0..zones.len - 1) |i| {
                     regions[region_index] = try PresetRegion.init(&zones[0], &zones[i + 1], instruments);
                     region_index += 1;
                 }
             } else {
                 // No global zone.
-                var i: usize = 0;
-                while (i < zones.len) : (i += 1) {
+                for (0..zones.len) |i| {
                     regions[region_index] = try PresetRegion.init(&Zone.empty(), &zones[i], instruments);
                     region_index += 1;
                 }
@@ -929,7 +923,6 @@ const PresetInfo = struct {
         }
 
         const count = size / 38;
-
         if (count <= 1) {
             return ZiggySynthError.InvalidSoundFont;
         }
@@ -937,18 +930,12 @@ const PresetInfo = struct {
         var presets = try allocator.alloc(Self, count);
         errdefer allocator.free(presets);
 
-        {
-            var i: usize = 0;
-            while (i < count) : (i += 1) {
-                presets[i] = try PresetInfo.init(reader);
-            }
+        for (0..count) |i| {
+            presets[i] = try PresetInfo.init(reader);
         }
 
-        {
-            var i: usize = 0;
-            while (i < count - 1) : (i += 1) {
-                presets[i].zone_end_index = presets[i + 1].zone_start_index;
-            }
+        for (0..count - 1) |i| {
+            presets[i].zone_end_index = presets[i + 1].zone_start_index;
         }
 
         return presets;
@@ -975,9 +962,8 @@ pub const Instrument = struct {
         var instruments = try allocator.alloc(Self, instrument_count);
         errdefer allocator.free(instruments);
 
-        var instrument_index: usize = 0;
         var region_index: usize = 0;
-        while (instrument_index < instrument_count) : (instrument_index += 1) {
+        for (0..instrument_count) |instrument_index| {
             const info = infos[instrument_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
@@ -1027,9 +1013,7 @@ pub const InstrumentRegion = struct {
         const instrument_count = infos.len - 1;
 
         var sum: usize = 0;
-
-        var instrument_index: usize = 0;
-        while (instrument_index < instrument_count) : (instrument_index += 1) {
+        for (0..instrument_count) |instrument_index| {
             const info = infos[instrument_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
@@ -1366,7 +1350,6 @@ const InstrumentInfo = struct {
         }
 
         const count = size / 22;
-
         if (count <= 1) {
             return ZiggySynthError.InvalidSoundFont;
         }
@@ -1374,18 +1357,12 @@ const InstrumentInfo = struct {
         var instruments = try allocator.alloc(Self, count);
         errdefer allocator.free(instruments);
 
-        {
-            var i: usize = 0;
-            while (i < count) : (i += 1) {
-                instruments[i] = try InstrumentInfo.init(reader);
-            }
+        for (0..count) |i| {
+            instruments[i] = try InstrumentInfo.init(reader);
         }
 
-        {
-            var i: usize = 0;
-            while (i < count - 1) : (i += 1) {
-                instruments[i].zone_end_index = instruments[i + 1].zone_start_index;
-            }
+        for (0..count - 1) |i| {
+            instruments[i].zone_end_index = instruments[i + 1].zone_start_index;
         }
 
         return instruments;
@@ -1438,7 +1415,6 @@ pub const SampleHeader = struct {
         }
 
         const count = size / 46 - 1;
-
         if (count <= 1) {
             return ZiggySynthError.InvalidSoundFont;
         }
@@ -1446,8 +1422,7 @@ pub const SampleHeader = struct {
         var headers = try allocator.alloc(Self, count);
         errdefer allocator.free(headers);
 
-        var i: usize = 0;
-        while (i < count) : (i += 1) {
+        for (0..count) |i| {
             headers[i] = try SampleHeader.init(reader);
         }
 
