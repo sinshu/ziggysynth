@@ -16,22 +16,16 @@ const ZiggySynthError = error{
 
 const ArrayMath = struct {
     fn multiplyAdd(a: f32, x: []f32, destination: []f32) void {
-        const destination_length = destination.len;
-
-        var i: usize = 0;
-        while (i < destination_length) : (i += 1) {
-            destination[i] += a * x[i];
+        for (x, destination) |value, *dst| {
+            dst.* += a * value;
         }
     }
 
     fn multiplyAddSlope(a: f32, step: f32, x: []f32, destination: []f32) void {
-        const destination_length = destination.len;
-        var b = a;
-
-        var i: usize = 0;
-        while (i < destination_length) : (i += 1) {
-            destination[i] += b * x[i];
-            b += step;
+        var slope = a;
+        for (x, destination) |value, *dst| {
+            dst.* += slope * value;
+            slope += step;
         }
     }
 };
@@ -396,8 +390,7 @@ const Generator = struct {
         var generators = try allocator.alloc(Self, count);
         errdefer allocator.free(generators);
 
-        var i: usize = 0;
-        while (i < count) : (i += 1) {
+        for (0..count) |i| {
             generators[i] = try Generator.init(reader);
         }
 
@@ -508,8 +501,7 @@ const Zone = struct {
         var zones = try allocator.alloc(Self, count);
         errdefer allocator.free(zones);
 
-        var i: usize = 0;
-        while (i < count) : (i += 1) {
+        for (0..count) |i| {
             zones[i] = Zone.init(&infos[i], generators);
         }
 
@@ -547,19 +539,13 @@ const ZoneInfo = struct {
         var zones = try allocator.alloc(Self, count);
         errdefer allocator.free(zones);
 
-        {
-            var i: usize = 0;
-            while (i < count) : (i += 1) {
-                zones[i] = try ZoneInfo.init(reader);
-            }
+        for (0..count) |i| {
+            zones[i] = try ZoneInfo.init(reader);
         }
 
-        {
-            var i: usize = 0;
-            while (i < count - 1) : (i += 1) {
-                zones[i].generator_count = zones[i + 1].generator_index - zones[i].generator_index;
-                zones[i].modulator_count = zones[i + 1].modulator_index - zones[i].modulator_index;
-            }
+        for (0..count - 1) |i| {
+            zones[i].generator_count = zones[i + 1].generator_index - zones[i].generator_index;
+            zones[i].modulator_count = zones[i + 1].modulator_index - zones[i].modulator_index;
         }
 
         return zones;
