@@ -1442,7 +1442,7 @@ pub const Synthesizer = struct {
 
     allocator: Allocator,
 
-    sound_font: SoundFont,
+    sound_font: *const SoundFont,
     sample_rate: i32,
     block_size: usize,
     maximum_polyphony: usize,
@@ -1475,7 +1475,7 @@ pub const Synthesizer = struct {
     chorus_output_left: ?[]f32,
     chorus_output_right: ?[]f32,
 
-    pub fn init(allocator: Allocator, sound_font: SoundFont, settings: SynthesizerSettings) !Self {
+    pub fn init(allocator: Allocator, sound_font: *const SoundFont, settings: *const SynthesizerSettings) !Self {
         try settings.validate();
 
         var preset_lookup: AutoHashMap(i32, *Preset) = AutoHashMap(i32, *Preset).init(allocator);
@@ -1503,7 +1503,7 @@ pub const Synthesizer = struct {
             channels[i] = Channel.init(i == Synthesizer.PERCUSSION_CHANNEL);
         }
 
-        var voices = try VoiceCollection.init(allocator, &settings);
+        var voices = try VoiceCollection.init(allocator, settings);
         errdefer voices.deinit();
 
         const block_left = try allocator.alloc(f32, @intCast(usize, settings.block_size));
@@ -3591,7 +3591,7 @@ pub const MidiFileSequencer = struct {
 
     synthesizer: *Synthesizer,
 
-    midi_file: ?MidiFile,
+    midi_file: ?*const MidiFile,
     play_loop: bool,
 
     block_wrote: usize,
@@ -3610,7 +3610,7 @@ pub const MidiFileSequencer = struct {
         };
     }
 
-    pub fn play(self: *Self, midi_file: MidiFile, play_loop: bool) void {
+    pub fn play(self: *Self, midi_file: *const MidiFile, play_loop: bool) void {
         self.midi_file = midi_file;
         self.play_loop = play_loop;
 

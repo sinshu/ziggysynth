@@ -45,7 +45,7 @@ defer sound_font.deinit();
 
 // Create the synthesizer.
 var settings = SynthesizerSettings.init(44100);
-var synthesizer = try Synthesizer.init(allocator, sound_font, settings);
+var synthesizer = try Synthesizer.init(allocator, &sound_font, &settings);
 defer synthesizer.deinit();
 
 // Play some notes (middle C, E, G).
@@ -75,7 +75,7 @@ defer sound_font.deinit();
 
 // Create the synthesizer.
 var settings = SynthesizerSettings.init(44100);
-var synthesizer = try Synthesizer.init(allocator, sound_font, settings);
+var synthesizer = try Synthesizer.init(allocator, &sound_font, &settings);
 defer synthesizer.deinit();
 
 // Load the MIDI file.
@@ -88,7 +88,7 @@ defer midi_file.deinit();
 var sequencer = MidiFileSequencer.init(&synthesizer);
 
 // Play the MIDI file.
-sequencer.play(midi_file, false);
+sequencer.play(&midi_file, false);
 
 // The output buffer.
 const sample_count = @floatToInt(usize, @intToFloat(f64, settings.sample_rate) * midi_file.getLength());
