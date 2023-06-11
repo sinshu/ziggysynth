@@ -16,22 +16,16 @@ const ZiggySynthError = error{
 
 const ArrayMath = struct {
     fn multiplyAdd(a: f32, x: []f32, destination: []f32) void {
-        const destination_length = destination.len;
-
-        var i: usize = 0;
-        while (i < destination_length) : (i += 1) {
-            destination[i] += a * x[i];
+        for (x, destination) |value, *dst| {
+            dst.* += a * value;
         }
     }
 
     fn multiplyAddSlope(a: f32, step: f32, x: []f32, destination: []f32) void {
-        const destination_length = destination.len;
-        var b = a;
-
-        var i: usize = 0;
-        while (i < destination_length) : (i += 1) {
-            destination[i] += b * x[i];
-            b += step;
+        var slope = a;
+        for (x, destination) |value, *dst| {
+            dst.* += slope * value;
+            slope += step;
         }
     }
 };
@@ -171,7 +165,6 @@ const SoundFontSampleData = struct {
         }
 
         const end = try BinaryReader.read(u32, reader);
-
         var pos: u32 = 0;
 
         const list_type = try BinaryReader.read([4]u8, reader);
@@ -245,7 +238,6 @@ const SoundFontParameters = struct {
         }
 
         const end = try BinaryReader.read(u32, reader);
-
         var pos: u32 = 0;
 
         const list_type = try BinaryReader.read([4]u8, reader);
@@ -396,8 +388,7 @@ const Generator = struct {
         var generators = try allocator.alloc(Self, count);
         errdefer allocator.free(generators);
 
-        var i: usize = 0;
-        while (i < count) : (i += 1) {
+        for (0..count) |i| {
             generators[i] = try Generator.init(reader);
         }
 
@@ -508,8 +499,7 @@ const Zone = struct {
         var zones = try allocator.alloc(Self, count);
         errdefer allocator.free(zones);
 
-        var i: usize = 0;
-        while (i < count) : (i += 1) {
+        for (0..count) |i| {
             zones[i] = Zone.init(&infos[i], generators);
         }
 
@@ -547,19 +537,13 @@ const ZoneInfo = struct {
         var zones = try allocator.alloc(Self, count);
         errdefer allocator.free(zones);
 
-        {
-            var i: usize = 0;
-            while (i < count) : (i += 1) {
-                zones[i] = try ZoneInfo.init(reader);
-            }
+        for (0..count) |i| {
+            zones[i] = try ZoneInfo.init(reader);
         }
 
-        {
-            var i: usize = 0;
-            while (i < count - 1) : (i += 1) {
-                zones[i].generator_count = zones[i + 1].generator_index - zones[i].generator_index;
-                zones[i].modulator_count = zones[i + 1].modulator_index - zones[i].modulator_index;
-            }
+        for (0..count - 1) |i| {
+            zones[i].generator_count = zones[i + 1].generator_index - zones[i].generator_index;
+            zones[i].modulator_count = zones[i + 1].modulator_index - zones[i].modulator_index;
         }
 
         return zones;
@@ -590,9 +574,8 @@ pub const Preset = struct {
         var presets = try allocator.alloc(Self, preset_count);
         errdefer allocator.free(presets);
 
-        var preset_index: usize = 0;
         var region_index: usize = 0;
-        while (preset_index < preset_count) : (preset_index += 1) {
+        for (0..preset_count) |preset_index| {
             const info = infos[preset_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
@@ -650,9 +633,7 @@ pub const PresetRegion = struct {
         const preset_count = infos.len - 1;
 
         var sum: usize = 0;
-
-        var preset_index: usize = 0;
-        while (preset_index < preset_count) : (preset_index += 1) {
+        for (0..preset_count) |preset_index| {
             const info = infos[preset_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
@@ -711,23 +692,20 @@ pub const PresetRegion = struct {
         errdefer allocator.free(regions);
         var region_index: usize = 0;
 
-        var preset_index: usize = 0;
-        while (preset_index < preset_count) : (preset_index += 1) {
+        for (0..preset_count) |preset_index| {
             const info = infos[preset_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
             // Is the first one the global zone?
             if (PresetRegion.containsGlobalZone(zones)) {
                 // The first one is the global zone.
-                var i: usize = 0;
-                while (i < zones.len - 1) : (i += 1) {
+                for (0..zones.len - 1) |i| {
                     regions[region_index] = try PresetRegion.init(&zones[0], &zones[i + 1], instruments);
                     region_index += 1;
                 }
             } else {
                 // No global zone.
-                var i: usize = 0;
-                while (i < zones.len) : (i += 1) {
+                for (0..zones.len) |i| {
                     regions[region_index] = try PresetRegion.init(&Zone.empty(), &zones[i], instruments);
                     region_index += 1;
                 }
@@ -943,7 +921,6 @@ const PresetInfo = struct {
         }
 
         const count = size / 38;
-
         if (count <= 1) {
             return ZiggySynthError.InvalidSoundFont;
         }
@@ -951,18 +928,12 @@ const PresetInfo = struct {
         var presets = try allocator.alloc(Self, count);
         errdefer allocator.free(presets);
 
-        {
-            var i: usize = 0;
-            while (i < count) : (i += 1) {
-                presets[i] = try PresetInfo.init(reader);
-            }
+        for (0..count) |i| {
+            presets[i] = try PresetInfo.init(reader);
         }
 
-        {
-            var i: usize = 0;
-            while (i < count - 1) : (i += 1) {
-                presets[i].zone_end_index = presets[i + 1].zone_start_index;
-            }
+        for (0..count - 1) |i| {
+            presets[i].zone_end_index = presets[i + 1].zone_start_index;
         }
 
         return presets;
@@ -989,9 +960,8 @@ pub const Instrument = struct {
         var instruments = try allocator.alloc(Self, instrument_count);
         errdefer allocator.free(instruments);
 
-        var instrument_index: usize = 0;
         var region_index: usize = 0;
-        while (instrument_index < instrument_count) : (instrument_index += 1) {
+        for (0..instrument_count) |instrument_index| {
             const info = infos[instrument_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
@@ -1041,9 +1011,7 @@ pub const InstrumentRegion = struct {
         const instrument_count = infos.len - 1;
 
         var sum: usize = 0;
-
-        var instrument_index: usize = 0;
-        while (instrument_index < instrument_count) : (instrument_index += 1) {
+        for (0..instrument_count) |instrument_index| {
             const info = infos[instrument_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
@@ -1119,23 +1087,20 @@ pub const InstrumentRegion = struct {
         errdefer allocator.free(regions);
         var region_index: usize = 0;
 
-        var instrument_index: usize = 0;
-        while (instrument_index < instrument_count) : (instrument_index += 1) {
+        for (0..instrument_count) |instrument_index| {
             const info = infos[instrument_index];
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
             // Is the first one the global zone?
             if (InstrumentRegion.containsGlobalZone(zones)) {
                 // The first one is the global zone.
-                var i: usize = 0;
-                while (i < zones.len - 1) : (i += 1) {
+                for (0..zones.len - 1) |i| {
                     regions[region_index] = try InstrumentRegion.init(&zones[0], &zones[i + 1], samples);
                     region_index += 1;
                 }
             } else {
                 // No global zone.
-                var i: usize = 0;
-                while (i < zones.len) : (i += 1) {
+                for (0..zones.len) |i| {
                     regions[region_index] = try InstrumentRegion.init(&Zone.empty(), &zones[i], samples);
                     region_index += 1;
                 }
@@ -1380,7 +1345,6 @@ const InstrumentInfo = struct {
         }
 
         const count = size / 22;
-
         if (count <= 1) {
             return ZiggySynthError.InvalidSoundFont;
         }
@@ -1388,18 +1352,12 @@ const InstrumentInfo = struct {
         var instruments = try allocator.alloc(Self, count);
         errdefer allocator.free(instruments);
 
-        {
-            var i: usize = 0;
-            while (i < count) : (i += 1) {
-                instruments[i] = try InstrumentInfo.init(reader);
-            }
+        for (0..count) |i| {
+            instruments[i] = try InstrumentInfo.init(reader);
         }
 
-        {
-            var i: usize = 0;
-            while (i < count - 1) : (i += 1) {
-                instruments[i].zone_end_index = instruments[i + 1].zone_start_index;
-            }
+        for (0..count - 1) |i| {
+            instruments[i].zone_end_index = instruments[i + 1].zone_start_index;
         }
 
         return instruments;
@@ -1452,7 +1410,6 @@ pub const SampleHeader = struct {
         }
 
         const count = size / 46 - 1;
-
         if (count <= 1) {
             return ZiggySynthError.InvalidSoundFont;
         }
@@ -1460,8 +1417,7 @@ pub const SampleHeader = struct {
         var headers = try allocator.alloc(Self, count);
         errdefer allocator.free(headers);
 
-        var i: usize = 0;
-        while (i < count) : (i += 1) {
+        for (0..count) |i| {
             headers[i] = try SampleHeader.init(reader);
         }
 
@@ -1486,7 +1442,7 @@ pub const Synthesizer = struct {
 
     allocator: Allocator,
 
-    sound_font: SoundFont,
+    sound_font: *const SoundFont,
     sample_rate: i32,
     block_size: usize,
     maximum_polyphony: usize,
@@ -1519,43 +1475,35 @@ pub const Synthesizer = struct {
     chorus_output_left: ?[]f32,
     chorus_output_right: ?[]f32,
 
-    pub fn init(allocator: Allocator, sound_font: SoundFont, settings: SynthesizerSettings) !Self {
+    pub fn init(allocator: Allocator, sound_font: *const SoundFont, settings: *const SynthesizerSettings) !Self {
         try settings.validate();
 
         var preset_lookup: AutoHashMap(i32, *Preset) = AutoHashMap(i32, *Preset).init(allocator);
         errdefer preset_lookup.deinit();
         var min_preset_id: i32 = math.maxInt(i32);
         var default_preset: ?*Preset = null;
-        {
-            var i: usize = 0;
-            while (i < sound_font.presets.len) : (i += 1) {
-                const preset = &sound_font.presets[i];
+        for (sound_font.presets) |*preset| {
+            // The preset ID is Int32, where the upper 16 bits represent the bank number
+            // and the lower 16 bits represent the patch number.
+            // This ID is used to search for presets by the combination of bank number
+            // and patch number.
+            var preset_id = (preset.getBankNumber() << 16) | preset.getPatchNumber();
+            try preset_lookup.put(preset_id, preset);
 
-                // The preset ID is Int32, where the upper 16 bits represent the bank number
-                // and the lower 16 bits represent the patch number.
-                // This ID is used to search for presets by the combination of bank number
-                // and patch number.
-                var preset_id = (preset.getBankNumber() << 16) | preset.getPatchNumber();
-                try preset_lookup.put(preset_id, preset);
-
-                // The preset with the minimum ID number will be default.
-                // If the SoundFont is GM compatible, the piano will be chosen.
-                if (preset_id < min_preset_id) {
-                    default_preset = preset;
-                    min_preset_id = preset_id;
-                }
+            // The preset with the minimum ID number will be default.
+            // If the SoundFont is GM compatible, the piano will be chosen.
+            if (preset_id < min_preset_id) {
+                default_preset = preset;
+                min_preset_id = preset_id;
             }
         }
 
         var channels = mem.zeroes([Synthesizer.CHANNEL_COUNT]Channel);
-        {
-            var i: usize = 0;
-            while (i < channels.len) : (i += 1) {
-                channels[i] = Channel.init(i == Synthesizer.PERCUSSION_CHANNEL);
-            }
+        for (0..channels.len) |i| {
+            channels[i] = Channel.init(i == Synthesizer.PERCUSSION_CHANNEL);
         }
 
-        var voices = try VoiceCollection.init(allocator, &settings);
+        var voices = try VoiceCollection.init(allocator, settings);
         errdefer voices.deinit();
 
         const block_left = try allocator.alloc(f32, @intCast(usize, settings.block_size));
@@ -1699,9 +1647,7 @@ pub const Synthesizer = struct {
             return;
         }
 
-        var i: usize = 0;
-        while (i < self.voices.active_voice_count) : (i += 1) {
-            var voice = &self.voices.voices[i];
+        for (self.voices.getActiveVoices()) |*voice| {
             if (voice.channel == channel and voice.key == key) {
                 voice.end();
             }
@@ -1738,14 +1684,10 @@ pub const Synthesizer = struct {
             }
         }
 
-        var pr: usize = 0;
-        while (pr < preset.regions.len) : (pr += 1) {
-            const preset_region = &preset.regions[pr];
+        for (preset.regions) |*preset_region| {
             if (preset_region.contains(key, velocity)) {
                 const instrument = preset_region.instrument;
-                var ir: usize = 0;
-                while (ir < instrument.regions.len) : (ir += 1) {
-                    const instrument_region = &instrument.regions[ir];
+                for (instrument.regions) |*instrument_region| {
                     if (instrument_region.contains(key, velocity)) {
                         var region_pair = RegionPair.init(preset_region, instrument_region);
 
@@ -1762,26 +1704,21 @@ pub const Synthesizer = struct {
         if (immediate) {
             self.voices.clear();
         } else {
-            var i: usize = 0;
-            while (i < self.voices.active_voice_count) : (i += 1) {
-                self.voices.voices[i].end();
+            for (self.voices.getActiveVoices()) |*voice| {
+                voice.end();
             }
         }
     }
 
     pub fn noteOffAllChannel(self: *Self, channel: i32, immediate: bool) void {
         if (immediate) {
-            var i: usize = 0;
-            while (i < self.voices.active_voice_count) : (i += 1) {
-                var voice = &self.voices.voices[i];
+            for (self.voices.getActiveVoices()) |*voice| {
                 if (voice.channel == channel) {
                     voice.kill();
                 }
             }
         } else {
-            var i: usize = 0;
-            while (i < self.voices.active_voice_count) : (i += 1) {
-                var voice = &self.voices.voices[i];
+            for (self.voices.getActiveVoices()) |*voice| {
                 if (voice.channel == channel) {
                     voice.end();
                 }
@@ -1790,9 +1727,8 @@ pub const Synthesizer = struct {
     }
 
     pub fn resetAllControllers(self: *Self) void {
-        var i: usize = 0;
-        while (i < self.channels.len) : (i += 1) {
-            self.channels[i].resetAllControllers();
+        for (&self.channels) |*channel| {
+            channel.resetAllControllers();
         }
     }
 
@@ -1807,9 +1743,8 @@ pub const Synthesizer = struct {
     pub fn reset(self: *Self) void {
         self.voices.clear();
 
-        var i: usize = 0;
-        while (i < self.channels.len) : (i += 1) {
-            self.channels[i].reset();
+        for (&self.channels) |*channel| {
+            channel.reset();
         }
 
         if (self.enable_reverb_and_chorus) {
@@ -1836,10 +1771,11 @@ pub const Synthesizer = struct {
             const dst_rem = left.len - wrote;
             const rem = @min(src_rem, dst_rem);
 
-            var t: usize = 0;
-            while (t < rem) : (t += 1) {
-                left[wrote + t] = self.block_left[self.block_read + t];
-                right[wrote + t] = self.block_right[self.block_read + t];
+            for (left[wrote .. wrote + rem], self.block_left[self.block_read .. self.block_read + rem]) |*dst, value| {
+                dst.* = value;
+            }
+            for (right[wrote .. wrote + rem], self.block_right[self.block_read .. self.block_read + rem]) |*dst, value| {
+                dst.* = value;
             }
 
             self.block_read += rem;
@@ -1848,29 +1784,19 @@ pub const Synthesizer = struct {
     }
 
     fn renderBlock(self: *Self) void {
-        const block_size = @intCast(usize, self.block_size);
-
         self.voices.processUnit(self);
 
-        {
-            var t: usize = 0;
-            while (t < block_size) : (t += 1) {
-                self.block_left[t] = 0.0;
-                self.block_right[t] = 0.0;
-            }
+        for (self.block_left, self.block_right) |*left, *right| {
+            left.* = 0.0;
+            right.* = 0.0;
         }
-
-        {
-            var i: usize = 0;
-            while (i < self.voices.active_voice_count) : (i += 1) {
-                const voice = &self.voices.voices[i];
-                const previous_gain_left = self.master_volume * voice.previous_mix_gain_left;
-                const current_gain_left = self.master_volume * voice.current_mix_gain_left;
-                self.writeBlock(previous_gain_left, current_gain_left, voice.block, self.block_left);
-                const previous_gain_right = self.master_volume * voice.previous_mix_gain_right;
-                const current_gain_right = self.master_volume * voice.current_mix_gain_right;
-                self.writeBlock(previous_gain_right, current_gain_right, voice.block, self.block_right);
-            }
+        for (self.voices.getActiveVoices()) |*voice| {
+            const previous_gain_left = self.master_volume * voice.previous_mix_gain_left;
+            const current_gain_left = self.master_volume * voice.current_mix_gain_left;
+            self.writeBlock(previous_gain_left, current_gain_left, voice.block, self.block_left);
+            const previous_gain_right = self.master_volume * voice.previous_mix_gain_right;
+            const current_gain_right = self.master_volume * voice.current_mix_gain_right;
+            self.writeBlock(previous_gain_right, current_gain_right, voice.block, self.block_right);
         }
 
         if (self.enable_reverb_and_chorus) {
@@ -1879,24 +1805,17 @@ pub const Synthesizer = struct {
             var chorus_input_right = self.chorus_input_right.?;
             var chorus_output_left = self.chorus_output_left.?;
             var chorus_output_right = self.chorus_output_right.?;
-            {
-                var t: usize = 0;
-                while (t < block_size) : (t += 1) {
-                    chorus_input_left[t] = 0.0;
-                    chorus_input_right[t] = 0.0;
-                }
+            for (chorus_input_left, chorus_input_right) |*left, *right| {
+                left.* = 0.0;
+                right.* = 0.0;
             }
-            {
-                var i: usize = 0;
-                while (i < self.voices.active_voice_count) : (i += 1) {
-                    const voice = &self.voices.voices[i];
-                    const previous_gain_left = voice.previous_chorus_send * voice.previous_mix_gain_left;
-                    const current_gain_left = voice.current_chorus_send * voice.current_mix_gain_left;
-                    self.writeBlock(previous_gain_left, current_gain_left, voice.block, chorus_input_left);
-                    const previous_gain_right = voice.previous_chorus_send * voice.previous_mix_gain_right;
-                    const current_gain_right = voice.current_chorus_send * voice.current_mix_gain_right;
-                    self.writeBlock(previous_gain_right, current_gain_right, voice.block, chorus_input_right);
-                }
+            for (self.voices.getActiveVoices()) |*voice| {
+                const previous_gain_left = voice.previous_chorus_send * voice.previous_mix_gain_left;
+                const current_gain_left = voice.current_chorus_send * voice.current_mix_gain_left;
+                self.writeBlock(previous_gain_left, current_gain_left, voice.block, chorus_input_left);
+                const previous_gain_right = voice.previous_chorus_send * voice.previous_mix_gain_right;
+                const current_gain_right = voice.current_chorus_send * voice.current_mix_gain_right;
+                self.writeBlock(previous_gain_right, current_gain_right, voice.block, chorus_input_right);
             }
             chorus.process(chorus_input_left, chorus_input_right, chorus_output_left, chorus_output_right);
             ArrayMath.multiplyAdd(self.master_volume, chorus_output_left, self.block_left);
@@ -1906,20 +1825,13 @@ pub const Synthesizer = struct {
             var reverb_input = self.reverb_input.?;
             var reverb_output_left = self.reverb_output_left.?;
             var reverb_output_right = self.reverb_output_right.?;
-            {
-                var t: usize = 0;
-                while (t < block_size) : (t += 1) {
-                    reverb_input[t] = 0.0;
-                }
+            for (reverb_input) |*value| {
+                value.* = 0.0;
             }
-            {
-                var i: usize = 0;
-                while (i < self.voices.active_voice_count) : (i += 1) {
-                    const voice = &self.voices.voices[i];
-                    const previous_gain = reverb.getInputGain() * voice.previous_reverb_send * (voice.previous_mix_gain_left + voice.previous_mix_gain_right);
-                    const current_gain = reverb.getInputGain() * voice.current_reverb_send * (voice.current_mix_gain_left + voice.current_mix_gain_right);
-                    self.writeBlock(previous_gain, current_gain, voice.block, reverb_input);
-                }
+            for (self.voices.getActiveVoices()) |*voice| {
+                const previous_gain = reverb.getInputGain() * voice.previous_reverb_send * (voice.previous_mix_gain_left + voice.previous_mix_gain_right);
+                const current_gain = reverb.getInputGain() * voice.current_reverb_send * (voice.current_mix_gain_left + voice.current_mix_gain_right);
+                self.writeBlock(previous_gain, current_gain, voice.block, reverb_input);
             }
             reverb.process(reverb_input, reverb_output_left, reverb_output_right);
             ArrayMath.multiplyAdd(self.master_volume, reverb_output_left, self.block_left);
@@ -2529,9 +2441,7 @@ const VoiceCollection = struct {
 
         var voices = try allocator.alloc(Voice, @intCast(usize, settings.maximum_polyphony));
         errdefer allocator.free(voices);
-
-        var i: usize = 0;
-        while (i < voices.len) : (i += 1) {
+        for (0..voices.len) |i| {
             const buffer_start = @intCast(usize, settings.block_size) * i;
             const buffer_end = buffer_start + @intCast(usize, settings.block_size);
             var block = block_buffer[buffer_start..buffer_end];
@@ -2576,9 +2486,7 @@ const VoiceCollection = struct {
         // Find one which has the lowest priority.
         var candidate: ?*Voice = null;
         var lowest_priority: f32 = 1000000.0;
-        var i: usize = 0;
-        while (i < self.active_voice_count) : (i += 1) {
-            var voice = &self.voices[i];
+        for (self.getActiveVoices()) |*voice| {
             var priority = voice.getPriority();
             if (priority < lowest_priority) {
                 lowest_priority = priority;
@@ -2596,7 +2504,6 @@ const VoiceCollection = struct {
 
     fn processUnit(self: *Self, synthesizer: *Synthesizer) void {
         var i: usize = 0;
-
         while (true) {
             if (i == self.active_voice_count) {
                 return;
@@ -2719,18 +2626,15 @@ const Oscillator = struct {
     }
 
     fn fillBlock_noLoop(self: *Self, block: []f32, pitch_ratio_fp: i64) bool {
-        const data_r = self.data.?;
-        const block_length = block.len;
+        const data = self.data.?;
 
-        var t: usize = 0;
-        while (t < block_length) : (t += 1) {
+        for (block, 0..block.len) |*dst, t| {
             const index = @bitCast(usize, self.position_fp >> Oscillator.FRAC_BITS);
 
             if (index >= self.end) {
                 if (t > 0) {
-                    var u = t;
-                    while (u < block_length) : (u += 1) {
-                        block[u] = 0.0;
+                    for (block[t..block.len]) |*dst2| {
+                        dst2.* = 0.0;
                     }
                     return true;
                 } else {
@@ -2738,10 +2642,10 @@ const Oscillator = struct {
                 }
             }
 
-            const x1 = @intCast(i64, data_r[index]);
-            const x2 = @intCast(i64, data_r[index + 1]);
+            const x1 = @intCast(i64, data[index]);
+            const x2 = @intCast(i64, data[index + 1]);
             const a_fp = self.position_fp & (Oscillator.FRAC_UNIT - 1);
-            block[t] = Oscillator.FP_TO_SAMPLE * @intToFloat(f32, (x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
+            dst.* = Oscillator.FP_TO_SAMPLE * @intToFloat(f32, (x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
 
             self.position_fp += pitch_ratio_fp;
         }
@@ -2750,31 +2654,26 @@ const Oscillator = struct {
     }
 
     fn fillBlock_continuous(self: *Self, block: []f32, pitch_ratio_fp: i64) bool {
-        const data_r = self.data.?;
-        const block_length = block.len;
-
+        const data = self.data.?;
         const end_loop_fp = @intCast(i64, self.end_loop) << Oscillator.FRAC_BITS;
-
         const loop_length = @intCast(usize, self.end_loop - self.start_loop);
         const loop_length_fp = @intCast(i64, loop_length) << Oscillator.FRAC_BITS;
 
-        var t: usize = 0;
-        while (t < block_length) : (t += 1) {
+        for (block) |*dst| {
             if (self.position_fp >= end_loop_fp) {
                 self.position_fp -= loop_length_fp;
             }
 
             const index1 = @bitCast(usize, self.position_fp >> Oscillator.FRAC_BITS);
             var index2 = index1 + 1;
-
             if (index2 >= self.end_loop) {
                 index2 -= loop_length;
             }
 
-            const x1 = @intCast(i64, data_r[index1]);
-            const x2 = @intCast(i64, data_r[index2]);
+            const x1 = @intCast(i64, data[index1]);
+            const x2 = @intCast(i64, data[index2]);
             const a_fp = self.position_fp & (Oscillator.FRAC_UNIT - 1);
-            block[t] = Oscillator.FP_TO_SAMPLE * @intToFloat(f32, (x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
+            dst.* = Oscillator.FP_TO_SAMPLE * @intToFloat(f32, (x1 << Oscillator.FRAC_BITS) + a_fp * (x2 - x1));
 
             self.position_fp += pitch_ratio_fp;
         }
@@ -2852,11 +2751,8 @@ const BiQuadFilter = struct {
     }
 
     fn processUnit(self: *Self, block: []f32) void {
-        const block_length = block.len;
-
         if (self.active) {
-            var t: usize = 0;
-            while (t < block_length) : (t += 1) {
+            for (0..block.len) |t| {
                 const input = block[t];
                 const output = self.a0 * input + self.a1 * self.x1 + self.a2 * self.x2 - self.a3 * self.y1 - self.a4 * self.y2;
 
@@ -2868,8 +2764,8 @@ const BiQuadFilter = struct {
                 block[t] = output;
             }
         } else {
-            self.x2 = block[block_length - 2];
-            self.x1 = block[block_length - 1];
+            self.x2 = block[block.len - 2];
+            self.x1 = block[block.len - 1];
             self.y2 = self.x2;
             self.y1 = self.x1;
         }
@@ -3506,38 +3402,23 @@ pub const MidiFile = struct {
         }
 
         var message_lists: [MidiFile.MAX_TRACK_COUNT]ArrayList(Message) = undefined;
-        {
-            var i: usize = 0;
-            while (i < track_count) : (i += 1) {
-                message_lists[i] = ArrayList(Message).init(allocator);
-            }
+        for (0..track_count) |i| {
+            message_lists[i] = ArrayList(Message).init(allocator);
         }
-        defer {
-            var i: usize = 0;
-            while (i < track_count) : (i += 1) {
-                message_lists[i].deinit();
-            }
-        }
+        defer for (0..track_count) |i| {
+            message_lists[i].deinit();
+        };
 
         var tick_lists: [MidiFile.MAX_TRACK_COUNT]ArrayList(i32) = undefined;
-        {
-            var i: usize = 0;
-            while (i < track_count) : (i += 1) {
-                tick_lists[i] = ArrayList(i32).init(allocator);
-            }
+        for (0..track_count) |i| {
+            tick_lists[i] = ArrayList(i32).init(allocator);
         }
-        defer {
-            var i: usize = 0;
-            while (i < track_count) : (i += 1) {
-                tick_lists[i].deinit();
-            }
-        }
+        defer for (0..track_count) |i| {
+            tick_lists[i].deinit();
+        };
 
-        {
-            var i: usize = 0;
-            while (i < track_count) : (i += 1) {
-                try MidiFile.readTrack(reader, &message_lists[i], &tick_lists[i]);
-            }
+        for (0..track_count) |i| {
+            try MidiFile.readTrack(reader, &message_lists[i], &tick_lists[i]);
         }
 
         return try MidiFile.mergeTracks(allocator, message_lists[0..track_count], tick_lists[0..track_count], resolution);
@@ -3632,8 +3513,7 @@ pub const MidiFile = struct {
             var min_tick: i32 = math.maxInt(i32);
             var min_index: i32 = -1;
 
-            var ch: usize = 0;
-            while (ch < tick_lists.len) : (ch += 1) {
+            for (0..tick_lists.len) |ch| {
                 if (indices[ch] < tick_lists[ch].items.len) {
                     const tick = tick_lists[ch].items[indices[ch]];
                     if (tick < min_tick) {
@@ -3671,8 +3551,7 @@ pub const MidiFile = struct {
         var times = try allocator.alloc(f64, merged_times.items.len);
         errdefer allocator.free(times);
 
-        var i: usize = 0;
-        while (i < messages.len) : (i += 1) {
+        for (0..messages.len) |i| {
             messages[i] = merged_messages.items[i];
             times[i] = merged_times.items[i];
         }
@@ -3712,7 +3591,7 @@ pub const MidiFileSequencer = struct {
 
     synthesizer: *Synthesizer,
 
-    midi_file: ?MidiFile,
+    midi_file: ?*const MidiFile,
     play_loop: bool,
 
     block_wrote: usize,
@@ -3731,7 +3610,7 @@ pub const MidiFileSequencer = struct {
         };
     }
 
-    pub fn play(self: *Self, midi_file: MidiFile, play_loop: bool) void {
+    pub fn play(self: *Self, midi_file: *const MidiFile, play_loop: bool) void {
         self.midi_file = midi_file;
         self.play_loop = play_loop;
 
@@ -3948,18 +3827,12 @@ const Reverb = struct {
             unreachable;
         }
 
-        {
-            var i: usize = 0;
-            while (i < apfs_l.len) : (i += 1) {
-                apfs_l[i].setFeedback(0.5);
-            }
+        for (&apfs_l) |*apf| {
+            apf.setFeedback(0.5);
         }
 
-        {
-            var i: usize = 0;
-            while (i < apfs_r.len) : (i += 1) {
-                apfs_r[i].setFeedback(0.5);
-            }
+        for (&apfs_r) |*apf| {
+            apf.setFeedback(0.5);
         }
 
         var reverb = Self{
@@ -3994,32 +3867,20 @@ const Reverb = struct {
     }
 
     fn mute(self: *Self) void {
-        {
-            var i: usize = 0;
-            while (i < self.cfs_l.len) : (i += 1) {
-                self.cfs_l[i].mute();
-            }
+        for (&self.cfs_l) |*cf| {
+            cf.mute();
         }
 
-        {
-            var i: usize = 0;
-            while (i < self.cfs_r.len) : (i += 1) {
-                self.cfs_r[i].mute();
-            }
+        for (&self.cfs_r) |*cf| {
+            cf.mute();
         }
 
-        {
-            var i: usize = 0;
-            while (i < self.apfs_l.len) : (i += 1) {
-                self.apfs_l[i].mute();
-            }
+        for (&self.apfs_l) |*apf| {
+            apf.mute();
         }
 
-        {
-            var i: usize = 0;
-            while (i < self.apfs_r.len) : (i += 1) {
-                self.apfs_r[i].mute();
-            }
+        for (&self.apfs_r) |*apf| {
+            apf.mute();
         }
     }
 
@@ -4028,53 +3889,30 @@ const Reverb = struct {
     }
 
     fn process(self: *Self, input: []f32, output_left: []f32, output_right: []f32) void {
-        const length = input.len;
-
-        {
-            var i: usize = 0;
-            while (i < length) : (i += 1) {
-                output_left[i] = 0.0;
-            }
+        for (output_left) |*dst| {
+            dst.* = 0.0;
         }
-        {
-            var i: usize = 0;
-            while (i < length) : (i += 1) {
-                output_right[i] = 0.0;
-            }
+        for (output_right) |*dst| {
+            dst.* = 0.0;
         }
 
-        {
-            var i: usize = 0;
-            while (i < self.cfs_l.len) : (i += 1) {
-                self.cfs_l[i].process(input, output_left);
-            }
+        for (&self.cfs_l) |*cf| {
+            cf.process(input, output_left);
+        }
+        for (&self.apfs_l) |*apf| {
+            apf.process(output_left);
         }
 
-        {
-            var i: usize = 0;
-            while (i < self.apfs_l.len) : (i += 1) {
-                self.apfs_l[i].process(output_left);
-            }
+        for (&self.cfs_r) |*cf| {
+            cf.process(input, output_right);
         }
-
-        {
-            var i: usize = 0;
-            while (i < self.cfs_r.len) : (i += 1) {
-                self.cfs_r[i].process(input, output_right);
-            }
-        }
-
-        {
-            var i: usize = 0;
-            while (i < self.apfs_r.len) : (i += 1) {
-                self.apfs_r[i].process(output_right);
-            }
+        for (&self.apfs_r) |*apf| {
+            apf.process(output_right);
         }
 
         // With the default settings, we can skip this part.
         if (1.0 - self.wet1 > 1.0E-3 or self.wet2 > 1.0E-3) {
-            var t: usize = 0;
-            while (t < length) : (t += 1) {
+            for (0..input.len) |t| {
                 const left = output_left[t];
                 const right = output_right[t];
                 output_left[t] = left * self.wet1 + right * self.wet2;
@@ -4091,20 +3929,13 @@ const Reverb = struct {
         self.damp1 = self.damp;
         self.gain = Reverb.FIXED_GAIN;
 
-        {
-            var i: usize = 0;
-            while (i < self.cfs_l.len) : (i += 1) {
-                self.cfs_l[i].setFeedback(self.room_size1);
-                self.cfs_l[i].setDamp(self.damp1);
-            }
+        for (&self.cfs_l) |*cf| {
+            cf.setFeedback(self.room_size1);
+            cf.setDamp(self.damp1);
         }
-
-        {
-            var i: usize = 0;
-            while (i < self.cfs_r.len) : (i += 1) {
-                self.cfs_r[i].setFeedback(self.room_size1);
-                self.cfs_r[i].setDamp(self.damp1);
-            }
+        for (&self.cfs_r) |*cf| {
+            cf.setFeedback(self.room_size1);
+            cf.setDamp(self.damp1);
         }
     }
 
@@ -4179,8 +4010,7 @@ const CombFilter = struct {
             const dst_rem = output_block_length - block_index;
             const rem = @min(src_rem, dst_rem);
 
-            var t: usize = 0;
-            while (t < rem) : (t += 1) {
+            for (0..rem) |t| {
                 const block_pos = block_index + t;
                 const buffer_pos = self.buffer_index + t;
 
@@ -4238,9 +4068,8 @@ const AllPassFilter = struct {
     }
 
     fn mute(self: *Self) void {
-        var i: usize = 0;
-        while (i < self.buffer.len) : (i += 1) {
-            self.buffer[i] = 0.0;
+        for (self.buffer) |*value| {
+            value.* = 0.0;
         }
     }
 
@@ -4258,8 +4087,7 @@ const AllPassFilter = struct {
             const dst_rem = block_length - block_index;
             const rem = @min(src_rem, dst_rem);
 
-            var t: usize = 0;
-            while (t < rem) : (t += 1) {
+            for (0..rem) |t| {
                 const block_pos = block_index + t;
                 const buffer_pos = self.buffer_index + t;
 
@@ -4294,8 +4122,7 @@ const Chorus = struct {
 
     delay_table: []f32,
 
-    buffer_index_l: usize,
-    buffer_index_r: usize,
+    buffer_index: usize,
 
     delay_table_index_l: usize,
     delay_table_index_r: usize,
@@ -4310,16 +4137,12 @@ const Chorus = struct {
         const delay_table_length = @floatToInt(usize, @round(@intToFloat(f64, sample_rate) / frequency));
         var delay_table = try allocator.alloc(f32, delay_table_length);
         errdefer allocator.free(delay_table);
-        {
-            var t: usize = 0;
-            while (t < delay_table_length) : (t += 1) {
-                const phase = 2.0 * math.pi * @intToFloat(f64, t) / @intToFloat(f64, delay_table_length);
-                delay_table[t] = @floatCast(f32, @intToFloat(f64, sample_rate) * (delay + depth * @sin(phase)));
-            }
+        for (0..delay_table_length) |t| {
+            const phase = 2.0 * math.pi * @intToFloat(f64, t) / @intToFloat(f64, delay_table_length);
+            delay_table[t] = @floatCast(f32, @intToFloat(f64, sample_rate) * (delay + depth * @sin(phase)));
         }
 
-        const buffer_index_l: usize = 0;
-        const buffer_index_r: usize = 0;
+        const buffer_index: usize = 0;
 
         const delay_table_index_l: usize = 0;
         const delay_table_index_r: usize = delay_table_length / 4;
@@ -4329,8 +4152,7 @@ const Chorus = struct {
             .buffer_l = buffer_l,
             .buffer_r = buffer_r,
             .delay_table = delay_table,
-            .buffer_index_l = buffer_index_l,
-            .buffer_index_r = buffer_index_r,
+            .buffer_index = buffer_index,
             .delay_table_index_l = delay_table_index_l,
             .delay_table_index_r = delay_table_index_r,
         };
@@ -4351,10 +4173,9 @@ const Chorus = struct {
         const delay_table_length = self.delay_table.len;
         const input_length = input_left.len;
 
-        {
-            var t: usize = 0;
-            while (t < input_length) : (t += 1) {
-                var position = @intToFloat(f64, self.buffer_index_l) - @floatCast(f64, self.delay_table[self.delay_table_index_l]);
+        for (0..input_length) |t| {
+            {
+                var position = @intToFloat(f64, self.buffer_index) - @floatCast(f64, self.delay_table[self.delay_table_index_l]);
                 if (position < 0.0) {
                     position += @intToFloat(f64, buffer_length);
                 }
@@ -4370,23 +4191,14 @@ const Chorus = struct {
                 const a = position - @intToFloat(f64, index1);
                 output_left[t] = @floatCast(f32, x1 + a * (x2 - x1));
 
-                self.buffer_l[self.buffer_index_l] = input_left[t];
-                self.buffer_index_l += 1;
-                if (self.buffer_index_l == buffer_length) {
-                    self.buffer_index_l = 0;
-                }
-
                 self.delay_table_index_l += 1;
                 if (self.delay_table_index_l == delay_table_length) {
                     self.delay_table_index_l = 0;
                 }
             }
-        }
 
-        {
-            var t: usize = 0;
-            while (t < input_length) : (t += 1) {
-                var position = @intToFloat(f64, self.buffer_index_r) - @floatCast(f64, self.delay_table[self.delay_table_index_r]);
+            {
+                var position = @intToFloat(f64, self.buffer_index) - @floatCast(f64, self.delay_table[self.delay_table_index_r]);
                 if (position < 0.0) {
                     position += @intToFloat(f64, buffer_length);
                 }
@@ -4402,35 +4214,27 @@ const Chorus = struct {
                 const a = position - @intToFloat(f64, index1);
                 output_right[t] = @floatCast(f32, x1 + a * (x2 - x1));
 
-                self.buffer_r[self.buffer_index_r] = input_right[t];
-                self.buffer_index_r += 1;
-                if (self.buffer_index_r == buffer_length) {
-                    self.buffer_index_r = 0;
-                }
-
                 self.delay_table_index_r += 1;
                 if (self.delay_table_index_r == delay_table_length) {
                     self.delay_table_index_r = 0;
                 }
             }
+
+            self.buffer_l[self.buffer_index] = input_left[t];
+            self.buffer_r[self.buffer_index] = input_right[t];
+            self.buffer_index += 1;
+            if (self.buffer_index == buffer_length) {
+                self.buffer_index = 0;
+            }
         }
     }
 
     fn mute(self: *Self) void {
-        const buffer_length = self.buffer_l.len;
-
-        {
-            var t: usize = 0;
-            while (t < buffer_length) : (t += 1) {
-                self.buffer_l[t] = 0.0;
-            }
+        for (self.buffer_l) |*value| {
+            value.* = 0.0;
         }
-
-        {
-            var t: usize = 0;
-            while (t < buffer_length) : (t += 1) {
-                self.buffer_r[t] = 0.0;
-            }
+        for (self.buffer_r) |*value| {
+            value.* = 0.0;
         }
     }
 };

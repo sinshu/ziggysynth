@@ -17,7 +17,7 @@ fn check(sample: *const SampleHeader, values: *const [7]i32) void {
 test "MuseScore Sample" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-    defer debug.assert(!gpa.deinit());
+    defer debug.assert(gpa.deinit() == .ok);
 
     var file = try std.fs.cwd().openFile("GeneralUser GS MuseScore v1.442.sf2", .{});
     defer file.close();

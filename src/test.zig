@@ -19,7 +19,7 @@ pub fn main() !void {
 
     var gpa = heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-    defer debug.assert(!gpa.deinit());
+    defer debug.assert(gpa.deinit() == .ok);
 
     try stdout.print("Simple chord...", .{});
     try bw.flush();
@@ -43,7 +43,7 @@ fn simple_chord(allocator: Allocator) !void {
 
     // Create the synthesizer.
     var settings = SynthesizerSettings.init(44100);
-    var synthesizer = try Synthesizer.init(allocator, sound_font, settings);
+    var synthesizer = try Synthesizer.init(allocator, &sound_font, &settings);
     defer synthesizer.deinit();
 
     // Play some notes (middle C, E, G).
@@ -74,7 +74,7 @@ fn flourish(allocator: Allocator) !void {
 
     // Create the synthesizer.
     var settings = SynthesizerSettings.init(44100);
-    var synthesizer = try Synthesizer.init(allocator, sound_font, settings);
+    var synthesizer = try Synthesizer.init(allocator, &sound_font, &settings);
     defer synthesizer.deinit();
 
     // Load the MIDI file.
@@ -87,7 +87,7 @@ fn flourish(allocator: Allocator) !void {
     var sequencer = MidiFileSequencer.init(&synthesizer);
 
     // Play the MIDI file.
-    sequencer.play(midi_file, false);
+    sequencer.play(&midi_file, false);
 
     // The output buffer.
     const sample_count = @floatToInt(usize, @intToFloat(f64, settings.sample_rate) * midi_file.getLength());
