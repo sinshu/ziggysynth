@@ -63,6 +63,32 @@ const BinaryReader = struct {
     }
 };
 
+fn ReadCounter(comptime T: type) type {
+    return struct {
+        const Self = @This();
+
+        reader: T,
+        count: usize,
+
+        fn init(reader: T) Self {
+            return Self{
+                .reader = reader,
+                .count = 0,
+            };
+        }
+
+        fn readNoEof(self: *Self, buf: []u8) !void {
+            try self.reader.readNoEof(buf);
+            self.count += buf.len;
+        }
+
+        fn skipBytes(self: *Self, num_bytes: u64, options: anytype) !void {
+            try self.skipBytes(num_bytes, options);
+            self.count += num_bytes;
+        }
+    };
+}
+
 pub const SoundFont = struct {
     const Self = @This();
 
@@ -165,31 +191,25 @@ const SoundFontSampleData = struct {
         }
 
         const end = try BinaryReader.read(u32, reader);
-        var pos: u32 = 0;
+        var rc = ReadCounter(@TypeOf(reader)).init(reader);
 
-        const list_type = try BinaryReader.read([4]u8, reader);
+        const list_type = try BinaryReader.read([4]u8, &rc);
         if (!mem.eql(u8, &list_type, "sdta")) {
             return ZiggySynthError.InvalidSoundFont;
         }
-        pos += 4;
 
-        while (pos < end) {
-            const id = try BinaryReader.read([4]u8, reader);
-            pos += 4;
-
-            const size = try BinaryReader.read(u32, reader);
-            pos += 4;
+        while (rc.count < end) {
+            const id = try BinaryReader.read([4]u8, &rc);
+            const size = try BinaryReader.read(u32, &rc);
 
             if (mem.eql(u8, &id, "smpl")) {
                 wave_data = try allocator.alloc(i16, size / 2);
-                try reader.readNoEof(@ptrCast([*]u8, wave_data.?.ptr)[0..size]);
+                try rc.readNoEof(@ptrCast([*]u8, wave_data.?.ptr)[0..size]);
             } else if (mem.eql(u8, &id, "sm24")) {
-                try reader.skipBytes(size, .{});
+                try rc.skipBytes(size, .{});
             } else {
                 return ZiggySynthError.InvalidSoundFont;
             }
-
-            pos += size;
         }
 
         _ = wave_data orelse return ZiggySynthError.InvalidSoundFont;
