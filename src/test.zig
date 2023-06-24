@@ -54,7 +54,7 @@ fn flourish(allocator: Allocator, stdout: anytype) !void {
     sequencer.play(&midi_file, false);
 
     // The output buffer.
-    const sample_count = @floatToInt(usize, @intToFloat(f64, settings.sample_rate) * midi_file.getLength());
+    const sample_count = @intFromFloat(usize, @floatFromInt(f64, settings.sample_rate) * midi_file.getLength());
     var left: []f32 = try allocator.alloc(f32, sample_count);
     defer allocator.free(left);
     var right: []f32 = try allocator.alloc(f32, sample_count);
@@ -72,28 +72,22 @@ fn flourish(allocator: Allocator, stdout: anytype) !void {
 
 fn write_pcm(allocator: Allocator, left: []f32, right: []f32, path: []const u8) !void {
     var max: f32 = 0.0;
-    {
-        var t: usize = 0;
-        while (t < left.len) : (t += 1) {
-            if (@fabs(left[t]) > max) {
-                max = @fabs(left[t]);
-            }
-            if (@fabs(right[t]) > max) {
-                max = @fabs(right[t]);
-            }
+    for (0..left.len) |t| {
+        if (@fabs(left[t]) > max) {
+            max = @fabs(left[t]);
+        }
+        if (@fabs(right[t]) > max) {
+            max = @fabs(right[t]);
         }
     }
     const a = 0.99 / max;
 
     var buf: []i16 = try allocator.alloc(i16, 2 * left.len);
     defer allocator.free(buf);
-    {
-        var t: usize = 0;
-        while (t < left.len) : (t += 1) {
-            const offset = 2 * t;
-            buf[offset + 0] = @floatToInt(i16, a * left[t] * 32768.0);
-            buf[offset + 1] = @floatToInt(i16, a * right[t] * 32768.0);
-        }
+    for (0..left.len) |t| {
+        const offset = 2 * t;
+        buf[offset + 0] = @intFromFloat(i16, a * left[t] * 32768.0);
+        buf[offset + 1] = @intFromFloat(i16, a * right[t] * 32768.0);
     }
 
     var pcm = try fs.cwd().createFile(path, .{});
