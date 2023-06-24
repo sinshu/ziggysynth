@@ -11,6 +11,7 @@ const Synthesizer = ziggysynth.Synthesizer;
 const SynthesizerSettings = ziggysynth.SynthesizerSettings;
 const MidiFile = ziggysynth.MidiFile;
 const MidiFileSequencer = ziggysynth.MidiFileSequencer;
+const time = std.time;
 
 pub fn main() !void {
     const stdout_file = io.getStdOut().writer();
@@ -21,51 +22,14 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     defer debug.assert(gpa.deinit() == .ok);
 
-    try stdout.print("Simple chord...", .{});
-    try bw.flush();
-    try simple_chord(allocator);
-    try stdout.print("OK\n", .{});
-    try bw.flush();
-
     try stdout.print("MIDI file synthesis...", .{});
     try bw.flush();
-    try flourish(allocator);
+    try flourish(allocator, stdout);
     try stdout.print("OK\n", .{});
     try bw.flush();
 }
 
-fn simple_chord(allocator: Allocator) !void {
-    // Load the SoundFont.
-    var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
-    defer sf2.close();
-    var sound_font = try SoundFont.init(allocator, sf2.reader());
-    defer sound_font.deinit();
-
-    // Create the synthesizer.
-    var settings = SynthesizerSettings.init(44100);
-    var synthesizer = try Synthesizer.init(allocator, &sound_font, &settings);
-    defer synthesizer.deinit();
-
-    // Play some notes (middle C, E, G).
-    synthesizer.noteOn(0, 60, 100);
-    synthesizer.noteOn(0, 64, 100);
-    synthesizer.noteOn(0, 67, 100);
-
-    // The output buffer (3 seconds).
-    const sample_count = @intCast(usize, 3 * settings.sample_rate);
-    var left: []f32 = try allocator.alloc(f32, sample_count);
-    defer allocator.free(left);
-    var right: []f32 = try allocator.alloc(f32, sample_count);
-    defer allocator.free(right);
-
-    // Render the waveform.
-    synthesizer.render(left, right);
-
-    // Write the waveform as a PMC file.
-    try write_pcm(allocator, left, right, "simple_chord.pcm");
-}
-
-fn flourish(allocator: Allocator) !void {
+fn flourish(allocator: Allocator, stdout: anytype) !void {
     // Load the SoundFont.
     var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
     defer sf2.close();
@@ -97,7 +61,10 @@ fn flourish(allocator: Allocator) !void {
     defer allocator.free(right);
 
     // Render the waveform.
+    var timer = try time.Timer.start();
     sequencer.render(left, right);
+    const duration = @intToFloat(f64, timer.lap()) / 1.0E+9;
+    try stdout.print("Time: {d:.3}\n", .{duration});
 
     // Write the waveform as a PMC file.
     try write_pcm(allocator, left, right, "flourish.pcm");
