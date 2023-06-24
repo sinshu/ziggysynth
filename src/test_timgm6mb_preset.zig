@@ -17,13 +17,13 @@ fn areEqual(x: f64, y: f64) bool {
 }
 
 fn check(region: *const PresetRegion, values: *const [39]f64) void {
-    debug.assert(areEqual(@intToFloat(f64, region.getModulationLfoToPitch()), values[0]));
-    debug.assert(areEqual(@intToFloat(f64, region.getVibratoLfoToPitch()), values[1]));
-    debug.assert(areEqual(@intToFloat(f64, region.getModulationEnvelopeToPitch()), values[2]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getModulationLfoToPitch()), values[0]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getVibratoLfoToPitch()), values[1]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getModulationEnvelopeToPitch()), values[2]));
     debug.assert(areEqual(region.getInitialFilterCutoffFrequency(), values[3]));
     debug.assert(areEqual(region.getInitialFilterQ(), values[4]));
-    debug.assert(areEqual(@intToFloat(f64, region.getModulationLfoToFilterCutoffFrequency()), values[5]));
-    debug.assert(areEqual(@intToFloat(f64, region.getModulationEnvelopeToFilterCutoffFrequency()), values[6]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getModulationLfoToFilterCutoffFrequency()), values[5]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getModulationEnvelopeToFilterCutoffFrequency()), values[6]));
     debug.assert(areEqual(region.getModulationLfoToVolume(), values[7]));
     debug.assert(areEqual(region.getChorusEffectsSend(), values[8]));
     debug.assert(areEqual(region.getReverbEffectsSend(), values[9]));
@@ -38,24 +38,24 @@ fn check(region: *const PresetRegion, values: *const [39]f64) void {
     debug.assert(areEqual(region.getDecayModulationEnvelope(), values[18]));
     debug.assert(areEqual(region.getSustainModulationEnvelope(), values[19]));
     debug.assert(areEqual(region.getReleaseModulationEnvelope(), values[20]));
-    debug.assert(areEqual(@intToFloat(f64, region.getKeyNumberToModulationEnvelopeHold()), values[21]));
-    debug.assert(areEqual(@intToFloat(f64, region.getKeyNumberToModulationEnvelopeDecay()), values[22]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getKeyNumberToModulationEnvelopeHold()), values[21]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getKeyNumberToModulationEnvelopeDecay()), values[22]));
     debug.assert(areEqual(region.getDelayVolumeEnvelope(), values[23]));
     debug.assert(areEqual(region.getAttackVolumeEnvelope(), values[24]));
     debug.assert(areEqual(region.getHoldVolumeEnvelope(), values[25]));
     debug.assert(areEqual(region.getDecayVolumeEnvelope(), values[26]));
     debug.assert(areEqual(region.getSustainVolumeEnvelope(), values[27]));
     debug.assert(areEqual(region.getReleaseVolumeEnvelope(), values[28]));
-    debug.assert(areEqual(@intToFloat(f64, region.getKeyNumberToVolumeEnvelopeHold()), values[29]));
-    debug.assert(areEqual(@intToFloat(f64, region.getKeyNumberToVolumeEnvelopeDecay()), values[30]));
-    debug.assert(areEqual(@intToFloat(f64, region.getKeyRangeStart()), values[31]));
-    debug.assert(areEqual(@intToFloat(f64, region.getKeyRangeEnd()), values[32]));
-    debug.assert(areEqual(@intToFloat(f64, region.getVelocityRangeStart()), values[33]));
-    debug.assert(areEqual(@intToFloat(f64, region.getVelocityRangeEnd()), values[34]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getKeyNumberToVolumeEnvelopeHold()), values[29]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getKeyNumberToVolumeEnvelopeDecay()), values[30]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getKeyRangeStart()), values[31]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getKeyRangeEnd()), values[32]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getVelocityRangeStart()), values[33]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getVelocityRangeEnd()), values[34]));
     debug.assert(areEqual(region.getInitialAttenuation(), values[35]));
-    debug.assert(areEqual(@intToFloat(f64, region.getCoarseTune()), values[36]));
-    debug.assert(areEqual(@intToFloat(f64, region.getFineTune()), values[37]));
-    debug.assert(areEqual(@intToFloat(f64, region.getScaleTuning()), values[38]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getCoarseTune()), values[36]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getFineTune()), values[37]));
+    debug.assert(areEqual(@floatFromInt(f64, region.getScaleTuning()), values[38]));
 }
 
 test "TimGM6mb Preset" {
