@@ -38,6 +38,7 @@ fn flourish(allocator: Allocator, stdout: anytype) !void {
 
     // Create the synthesizer.
     var settings = SynthesizerSettings.init(44100);
+    settings.enable_reverb_and_chorus = false;
     var synthesizer = try Synthesizer.init(allocator, &sound_font, &settings);
     defer synthesizer.deinit();
 
@@ -63,7 +64,7 @@ fn flourish(allocator: Allocator, stdout: anytype) !void {
     // Render the waveform.
     var timer = try time.Timer.start();
     sequencer.render(left, right);
-    const duration = @intToFloat(f64, timer.lap()) / 1.0E+9;
+    const duration = @floatFromInt(f64, timer.lap()) / 1.0E+9;
     try stdout.print("Time: {d:.3}\n", .{duration});
 
     // Write the waveform as a PMC file.
