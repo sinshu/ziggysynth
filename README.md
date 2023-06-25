@@ -98,7 +98,7 @@ var sequencer = MidiFileSequencer.init(&synthesizer);
 sequencer.play(&midi_file, false);
 
 // The output buffer.
-const sample_count = @floatToInt(usize, @intToFloat(f64, settings.sample_rate) * midi_file.getLength());
+const sample_count = @intFromFloat(usize, @floatFromInt(f64, settings.sample_rate) * midi_file.getLength());
 var left: []f32 = try allocator.alloc(f32, sample_count);
 defer allocator.free(left);
 var right: []f32 = try allocator.alloc(f32, sample_count);
