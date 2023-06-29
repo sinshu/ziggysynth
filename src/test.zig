@@ -52,7 +52,7 @@ fn simple_chord(allocator: Allocator) !void {
     synthesizer.noteOn(0, 67, 100);
 
     // The output buffer (3 seconds).
-    const sample_count = @intCast(usize, 3 * settings.sample_rate);
+    const sample_count = @as(usize, @intCast(3 * settings.sample_rate));
     var left: []f32 = try allocator.alloc(f32, sample_count);
     defer allocator.free(left);
     var right: []f32 = try allocator.alloc(f32, sample_count);
@@ -90,7 +90,7 @@ fn flourish(allocator: Allocator) !void {
     sequencer.play(&midi_file, false);
 
     // The output buffer.
-    const sample_count = @intFromFloat(usize, @floatFromInt(f64, settings.sample_rate) * midi_file.getLength());
+    const sample_count = @as(usize, @intFromFloat(@as(f64, @floatFromInt(settings.sample_rate)) * midi_file.getLength()));
     var left: []f32 = try allocator.alloc(f32, sample_count);
     defer allocator.free(left);
     var right: []f32 = try allocator.alloc(f32, sample_count);
@@ -119,14 +119,14 @@ fn write_pcm(allocator: Allocator, left: []f32, right: []f32, path: []const u8) 
     defer allocator.free(buf);
     for (0..left.len) |t| {
         const offset = 2 * t;
-        buf[offset + 0] = @intFromFloat(i16, a * left[t] * 32768.0);
-        buf[offset + 1] = @intFromFloat(i16, a * right[t] * 32768.0);
+        buf[offset + 0] = @as(i16, @intFromFloat(a * left[t] * 32768.0));
+        buf[offset + 1] = @as(i16, @intFromFloat(a * right[t] * 32768.0));
     }
 
     var pcm = try fs.cwd().createFile(path, .{});
     defer pcm.close();
     var writer = pcm.writer();
-    try writer.writeAll(@ptrCast([*]u8, buf.ptr)[0..(4 * left.len)]);
+    try writer.writeAll(@as([*]u8, @ptrCast(buf.ptr))[0..(4 * left.len)]);
 }
 
 test {

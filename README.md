@@ -61,7 +61,7 @@ synthesizer.noteOn(0, 64, 100);
 synthesizer.noteOn(0, 67, 100);
 
 // The output buffer (3 seconds).
-const sample_count = @intCast(usize, 3 * settings.sample_rate);
+const sample_count = @as(usize, @intCast(3 * settings.sample_rate));
 var left: []f32 = try allocator.alloc(f32, sample_count);
 defer allocator.free(left);
 var right: []f32 = try allocator.alloc(f32, sample_count);
@@ -98,7 +98,7 @@ var sequencer = MidiFileSequencer.init(&synthesizer);
 sequencer.play(&midi_file, false);
 
 // The output buffer.
-const sample_count = @intFromFloat(usize, @floatFromInt(f64, settings.sample_rate) * midi_file.getLength());
+const sample_count = @as(usize, @intFromFloat(@as(f64, @floatFromInt(settings.sample_rate)) * midi_file.getLength()));
 var left: []f32 = try allocator.alloc(f32, sample_count);
 defer allocator.free(left);
 var right: []f32 = try allocator.alloc(f32, sample_count);
