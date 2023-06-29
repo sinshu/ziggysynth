@@ -90,10 +90,10 @@ fn flourish(allocator: Allocator) !void {
     sequencer.play(&midi_file, false);
 
     // The output buffer.
-    const sample_count: usize = @intFromFloat(@as(f64, @floatFromInt(settings.sample_rate)) * midi_file.getLength());
-    var left: []f32 = try allocator.alloc(f32, sample_count);
+    const sample_count = @as(f64, @floatFromInt(settings.sample_rate)) * midi_file.getLength();
+    var left: []f32 = try allocator.alloc(f32, @intFromFloat(sample_count));
     defer allocator.free(left);
-    var right: []f32 = try allocator.alloc(f32, sample_count);
+    var right: []f32 = try allocator.alloc(f32, @intFromFloat(sample_count));
     defer allocator.free(right);
 
     // Render the waveform.
