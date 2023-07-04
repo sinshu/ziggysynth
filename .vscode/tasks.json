@@ -8,7 +8,11 @@
             "group": "build",
             "problemMatcher": [
                 "$gcc"
-            ]
+            ],
+            "presentation": {
+                "revealProblems": "onProblem",
+                "close": true
+            }
         },
         {
             "label": "test",
@@ -17,7 +21,10 @@
             "group": "test",
             "problemMatcher": [
                 "$gcc"
-            ]
+            ],
+            "presentation": {
+                "focus": true
+            }
         }
     ]
 }
