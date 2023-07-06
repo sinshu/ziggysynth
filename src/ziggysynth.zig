@@ -83,7 +83,7 @@ fn ReadCounter(comptime T: type) type {
         }
 
         fn skipBytes(self: *Self, num_bytes: u64, options: anytype) !void {
-            try self.skipBytes(num_bytes, options);
+            try self.reader.skipBytes(num_bytes, options);
             self.count += num_bytes;
         }
     };
@@ -258,44 +258,38 @@ const SoundFontParameters = struct {
         }
 
         const end = try BinaryReader.read(u32, reader);
-        var pos: u32 = 0;
+        var rc = ReadCounter(@TypeOf(reader)).init(reader);
 
-        const list_type = try BinaryReader.read([4]u8, reader);
+        const list_type = try BinaryReader.read([4]u8, &rc);
         if (!mem.eql(u8, &list_type, "pdta")) {
             return ZiggySynthError.InvalidSoundFont;
         }
-        pos += 4;
 
-        while (pos < end) {
-            const id = try BinaryReader.read([4]u8, reader);
-            pos += 4;
-
-            const size = try BinaryReader.read(u32, reader);
-            pos += 4;
+        while (rc.count < end) {
+            const id = try BinaryReader.read([4]u8, &rc);
+            const size = try BinaryReader.read(u32, &rc);
 
             if (mem.eql(u8, &id, "phdr")) {
-                preset_infos = try PresetInfo.readFromChunk(allocator, reader, size);
+                preset_infos = try PresetInfo.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "pbag")) {
-                preset_bag = try ZoneInfo.readFromChunk(allocator, reader, size);
+                preset_bag = try ZoneInfo.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "pmod")) {
-                try reader.skipBytes(size, .{});
+                try rc.skipBytes(size, .{});
             } else if (mem.eql(u8, &id, "pgen")) {
-                preset_generators = try Generator.readFromChunk(allocator, reader, size);
+                preset_generators = try Generator.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "inst")) {
-                instrument_infos = try InstrumentInfo.readFromChunk(allocator, reader, size);
+                instrument_infos = try InstrumentInfo.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "ibag")) {
-                instrument_bag = try ZoneInfo.readFromChunk(allocator, reader, size);
+                instrument_bag = try ZoneInfo.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "imod")) {
-                try reader.skipBytes(size, .{});
+                try rc.skipBytes(size, .{});
             } else if (mem.eql(u8, &id, "igen")) {
-                instrument_generators = try Generator.readFromChunk(allocator, reader, size);
+                instrument_generators = try Generator.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "shdr")) {
-                sample_headers = try SampleHeader.readFromChunk(allocator, reader, size);
+                sample_headers = try SampleHeader.readFromChunk(allocator, &rc, size);
             } else {
                 return ZiggySynthError.InvalidSoundFont;
             }
-
-            pos += size;
         }
 
         _ = preset_infos orelse return ZiggySynthError.InvalidSoundFont;
@@ -3455,14 +3449,15 @@ pub const MidiFile = struct {
             return ZiggySynthError.InvalidMidiFile;
         }
 
-        _ = try BinaryReader.readBigEndian(i32, reader);
+        const size = try BinaryReader.readBigEndian(u32, reader);
+        var rc = ReadCounter(@TypeOf(reader)).init(reader);
 
         var tick: i32 = 0;
         var last_status: u8 = 0;
 
         while (true) {
-            const delta = try BinaryReader.readIntVariableLength(reader);
-            const first = try BinaryReader.read(u8, reader);
+            const delta = try BinaryReader.readIntVariableLength(&rc);
+            const first = try BinaryReader.read(u8, &rc);
 
             tick += delta;
 
@@ -3472,7 +3467,7 @@ pub const MidiFile = struct {
                     try messages.append(Message.common1(last_status, first));
                     try ticks.append(tick);
                 } else {
-                    const data2 = try BinaryReader.read(u8, reader);
+                    const data2 = try BinaryReader.read(u8, &rc);
                     try messages.append(Message.common2(last_status, first, data2));
                     try ticks.append(tick);
                 }
@@ -3481,30 +3476,37 @@ pub const MidiFile = struct {
             }
 
             switch (first) {
-                0xF0 => try MidiFile.discardData(reader),
-                0xF7 => try MidiFile.discardData(reader),
-                0xFF => switch (try BinaryReader.read(u8, reader)) {
+                0xF0 => try MidiFile.discardData(&rc),
+                0xF7 => try MidiFile.discardData(&rc),
+                0xFF => switch (try BinaryReader.read(u8, &rc)) {
                     0x2F => {
-                        _ = try BinaryReader.read(u8, reader);
+                        _ = try BinaryReader.read(u8, &rc);
                         try messages.append(Message.endOfTrack());
                         try ticks.append(tick);
+
+                        // Some MIDI files may have events inserted after the EOT.
+                        // Such events should be ignored.
+                        if (rc.count < size) {
+                            try rc.skipBytes(size - rc.count, .{});
+                        }
+
                         return;
                     },
                     0x51 => {
-                        try messages.append(Message.tempoChange(try MidiFile.readTempo(reader)));
+                        try messages.append(Message.tempoChange(try MidiFile.readTempo(&rc)));
                         try ticks.append(tick);
                     },
-                    else => try MidiFile.discardData(reader),
+                    else => try MidiFile.discardData(&rc),
                 },
                 else => {
                     const command = first & 0xF0;
                     if (command == 0xC0 or command == 0xD0) {
-                        const data1 = try BinaryReader.read(u8, reader);
+                        const data1 = try BinaryReader.read(u8, &rc);
                         try messages.append(Message.common1(first, data1));
                         try ticks.append(tick);
                     } else {
-                        const data1 = try BinaryReader.read(u8, reader);
-                        const data2 = try BinaryReader.read(u8, reader);
+                        const data1 = try BinaryReader.read(u8, &rc);
+                        const data2 = try BinaryReader.read(u8, &rc);
                         try messages.append(Message.common2(first, data1, data2));
                         try ticks.append(tick);
                     }
