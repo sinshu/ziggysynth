@@ -17,21 +17,21 @@ fn areEqual(x: f64, y: f64) bool {
 }
 
 fn check(region: *const InstrumentRegion, values: *const [50]f64) void {
-    debug.assert(areEqual(@intToFloat(f64, region.getSampleStart()), values[0]));
-    debug.assert(areEqual(@intToFloat(f64, region.getSampleEnd()), values[1]));
-    debug.assert(areEqual(@intToFloat(f64, region.getSampleStartLoop()), values[2]));
-    debug.assert(areEqual(@intToFloat(f64, region.getSampleEndLoop()), values[3]));
-    debug.assert(areEqual(@intToFloat(f64, region.getStartAddressOffset()), values[4]));
-    debug.assert(areEqual(@intToFloat(f64, region.getEndAddressOffset()), values[5]));
-    debug.assert(areEqual(@intToFloat(f64, region.getStartLoopAddressOffset()), values[6]));
-    debug.assert(areEqual(@intToFloat(f64, region.getEndLoopAddressOffset()), values[7]));
-    debug.assert(areEqual(@intToFloat(f64, region.getModulationLfoToPitch()), values[8]));
-    debug.assert(areEqual(@intToFloat(f64, region.getVibratoLfoToPitch()), values[9]));
-    debug.assert(areEqual(@intToFloat(f64, region.getModulationEnvelopeToPitch()), values[10]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getSampleStart())), values[0]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getSampleEnd())), values[1]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getSampleStartLoop())), values[2]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getSampleEndLoop())), values[3]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getStartAddressOffset())), values[4]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getEndAddressOffset())), values[5]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getStartLoopAddressOffset())), values[6]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getEndLoopAddressOffset())), values[7]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getModulationLfoToPitch())), values[8]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getVibratoLfoToPitch())), values[9]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getModulationEnvelopeToPitch())), values[10]));
     debug.assert(areEqual(region.getInitialFilterCutoffFrequency(), values[11]));
     debug.assert(areEqual(region.getInitialFilterQ(), values[12]));
-    debug.assert(areEqual(@intToFloat(f64, region.getModulationLfoToFilterCutoffFrequency()), values[13]));
-    debug.assert(areEqual(@intToFloat(f64, region.getModulationEnvelopeToFilterCutoffFrequency()), values[14]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getModulationLfoToFilterCutoffFrequency())), values[13]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getModulationEnvelopeToFilterCutoffFrequency())), values[14]));
     debug.assert(areEqual(region.getModulationLfoToVolume(), values[15]));
     debug.assert(areEqual(region.getChorusEffectsSend(), values[16]));
     debug.assert(areEqual(region.getReverbEffectsSend(), values[17]));
@@ -46,27 +46,27 @@ fn check(region: *const InstrumentRegion, values: *const [50]f64) void {
     debug.assert(areEqual(region.getDecayModulationEnvelope(), values[26]));
     debug.assert(areEqual(region.getSustainModulationEnvelope(), values[27]));
     debug.assert(areEqual(region.getReleaseModulationEnvelope(), values[28]));
-    debug.assert(areEqual(@intToFloat(f64, region.getKeyNumberToModulationEnvelopeHold()), values[29]));
-    debug.assert(areEqual(@intToFloat(f64, region.getKeyNumberToModulationEnvelopeDecay()), values[30]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getKeyNumberToModulationEnvelopeHold())), values[29]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getKeyNumberToModulationEnvelopeDecay())), values[30]));
     debug.assert(areEqual(region.getDelayVolumeEnvelope(), values[31]));
     debug.assert(areEqual(region.getAttackVolumeEnvelope(), values[32]));
     debug.assert(areEqual(region.getHoldVolumeEnvelope(), values[33]));
     debug.assert(areEqual(region.getDecayVolumeEnvelope(), values[34]));
     debug.assert(areEqual(region.getSustainVolumeEnvelope(), values[35]));
     debug.assert(areEqual(region.getReleaseVolumeEnvelope(), values[36]));
-    debug.assert(areEqual(@intToFloat(f64, region.getKeyNumberToVolumeEnvelopeHold()), values[37]));
-    debug.assert(areEqual(@intToFloat(f64, region.getKeyNumberToVolumeEnvelopeDecay()), values[38]));
-    debug.assert(areEqual(@intToFloat(f64, region.getKeyRangeStart()), values[39]));
-    debug.assert(areEqual(@intToFloat(f64, region.getKeyRangeEnd()), values[40]));
-    debug.assert(areEqual(@intToFloat(f64, region.getVelocityRangeStart()), values[41]));
-    debug.assert(areEqual(@intToFloat(f64, region.getVelocityRangeEnd()), values[42]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getKeyNumberToVolumeEnvelopeHold())), values[37]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getKeyNumberToVolumeEnvelopeDecay())), values[38]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getKeyRangeStart())), values[39]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getKeyRangeEnd())), values[40]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getVelocityRangeStart())), values[41]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getVelocityRangeEnd())), values[42]));
     debug.assert(areEqual(region.getInitialAttenuation(), values[43]));
-    debug.assert(areEqual(@intToFloat(f64, region.getCoarseTune()), values[44]));
-    debug.assert(areEqual(@intToFloat(f64, region.getFineTune()), values[45]));
-    debug.assert(areEqual(@intToFloat(f64, region.getSampleModes()), values[46]));
-    debug.assert(areEqual(@intToFloat(f64, region.getScaleTuning()), values[47]));
-    debug.assert(areEqual(@intToFloat(f64, region.getExclusiveClass()), values[48]));
-    debug.assert(areEqual(@intToFloat(f64, region.getRootKey()), values[49]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getCoarseTune())), values[44]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getFineTune())), values[45]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getSampleModes())), values[46]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getScaleTuning())), values[47]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getExclusiveClass())), values[48]));
+    debug.assert(areEqual(@as(f64, @floatFromInt(region.getRootKey())), values[49]));
 }
 
 test "MuseScore Instrument" {

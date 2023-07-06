@@ -15,7 +15,7 @@ ZiggySynth is a SoundFont MIDI synthesizer written in pure Zig, ported from [Mel
 
 ## Installation
 
-* Zig v0.11 is required.
+* Zig v0.11.x is required.
 * Copy [ziggysynth.zig](src/ziggysynth.zig) to your project.
 
 
@@ -61,7 +61,7 @@ synthesizer.noteOn(0, 64, 100);
 synthesizer.noteOn(0, 67, 100);
 
 // The output buffer (3 seconds).
-const sample_count = @intCast(usize, 3 * settings.sample_rate);
+const sample_count: usize = @intCast(3 * settings.sample_rate);
 var left: []f32 = try allocator.alloc(f32, sample_count);
 defer allocator.free(left);
 var right: []f32 = try allocator.alloc(f32, sample_count);
@@ -98,10 +98,10 @@ var sequencer = MidiFileSequencer.init(&synthesizer);
 sequencer.play(&midi_file, false);
 
 // The output buffer.
-const sample_count = @floatToInt(usize, @intToFloat(f64, settings.sample_rate) * midi_file.getLength());
-var left: []f32 = try allocator.alloc(f32, sample_count);
+const sample_count = @as(f64, @floatFromInt(settings.sample_rate)) * midi_file.getLength();
+var left: []f32 = try allocator.alloc(f32, @intFromFloat(sample_count));
 defer allocator.free(left);
-var right: []f32 = try allocator.alloc(f32, sample_count);
+var right: []f32 = try allocator.alloc(f32, @intFromFloat(sample_count));
 defer allocator.free(right);
 
 // Render the waveform.
