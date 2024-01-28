@@ -495,7 +495,7 @@ const Zone = struct {
     fn init(info: *ZoneInfo, generators: []Generator) Self {
         const start = info.generator_index;
         const end = start + info.generator_count;
-        var segment = generators[start..end];
+        const segment = generators[start..end];
 
         return Self{
             .generators = segment,
@@ -1501,7 +1501,7 @@ pub const Synthesizer = struct {
             // and the lower 16 bits represent the patch number.
             // This ID is used to search for presets by the combination of bank number
             // and patch number.
-            var preset_id = (preset.getBankNumber() << 16) | preset.getPatchNumber();
+            const preset_id = (preset.getBankNumber() << 16) | preset.getPatchNumber();
             try preset_lookup.put(preset_id, preset);
 
             // The preset with the minimum ID number will be default.
@@ -1689,7 +1689,7 @@ pub const Synthesizer = struct {
             // Try fallback to the GM sound set.
             // Normally, the given patch number + the bank number 0 will work.
             // For drums (bank number >= 128), it seems to be better to select the standard set (128:0).
-            var gm_preset_id = if (channel_info.getBankNumber() < 128) channel_info.getPatchNumber() else (128 << 16);
+            const gm_preset_id = if (channel_info.getBankNumber() < 128) channel_info.getPatchNumber() else (128 << 16);
             if (self.preset_lookup.get(gm_preset_id)) |value| {
                 preset = value;
             } else {
@@ -1815,10 +1815,10 @@ pub const Synthesizer = struct {
 
         if (self.enable_reverb_and_chorus) {
             var chorus = &self.chorus.?;
-            var chorus_input_left = self.chorus_input_left.?;
-            var chorus_input_right = self.chorus_input_right.?;
-            var chorus_output_left = self.chorus_output_left.?;
-            var chorus_output_right = self.chorus_output_right.?;
+            const chorus_input_left = self.chorus_input_left.?;
+            const chorus_input_right = self.chorus_input_right.?;
+            const chorus_output_left = self.chorus_output_left.?;
+            const chorus_output_right = self.chorus_output_right.?;
             for (chorus_input_left, chorus_input_right) |*left, *right| {
                 left.* = 0.0;
                 right.* = 0.0;
@@ -1836,9 +1836,9 @@ pub const Synthesizer = struct {
             ArrayMath.multiplyAdd(self.master_volume, chorus_output_right, self.block_right);
 
             var reverb = &self.reverb.?;
-            var reverb_input = self.reverb_input.?;
-            var reverb_output_left = self.reverb_output_left.?;
-            var reverb_output_right = self.reverb_output_right.?;
+            const reverb_input = self.reverb_input.?;
+            const reverb_output_left = self.reverb_output_left.?;
+            const reverb_output_right = self.reverb_output_right.?;
             for (reverb_input) |*value| {
                 value.* = 0.0;
             }
@@ -1858,7 +1858,7 @@ pub const Synthesizer = struct {
             return;
         }
 
-        if (@fabs(current_gain - previous_gain) < 1.0E-3) {
+        if (@abs(current_gain - previous_gain) < 1.0E-3) {
             ArrayMath.multiplyAdd(current_gain, source, destination);
         } else {
             const step = self.inverse_block_size * (current_gain - previous_gain);
@@ -2458,7 +2458,7 @@ const VoiceCollection = struct {
         for (0..voices.len) |i| {
             const buffer_start = settings.block_size * i;
             const buffer_end = buffer_start + settings.block_size;
-            var block = block_buffer[buffer_start..buffer_end];
+            const block = block_buffer[buffer_start..buffer_end];
             voices[i] = Voice.init(settings, block);
         }
 
@@ -2478,11 +2478,11 @@ const VoiceCollection = struct {
     fn requestNew(self: *Self, region: *InstrumentRegion, channel: i32) ?*Voice {
         // If an exclusive class is assigned to the region, find a voice with the same class.
         // If found, reuse it to avoid playing multiple voices with the same class at a time.
-        var exclusive_class = region.getExclusiveClass();
+        const exclusive_class = region.getExclusiveClass();
         if (exclusive_class != 0) {
             var i: usize = 0;
             while (i < self.active_voice_count) : (i += 1) {
-                var voice = &self.voices[i];
+                const voice = &self.voices[i];
                 if (voice.exclusive_class == exclusive_class and voice.channel == channel) {
                     return voice;
                 }
@@ -2491,7 +2491,7 @@ const VoiceCollection = struct {
 
         // If the number of active voices is less than the limit, use a free one.
         if (self.active_voice_count < self.voices.len) {
-            var free = &self.voices[self.active_voice_count];
+            const free = &self.voices[self.active_voice_count];
             self.active_voice_count += 1;
             return free;
         }
@@ -2501,7 +2501,7 @@ const VoiceCollection = struct {
         var candidate: ?*Voice = null;
         var lowest_priority: f32 = 1000000.0;
         for (self.getActiveVoices()) |*voice| {
-            var priority = voice.getPriority();
+            const priority = voice.getPriority();
             if (priority < lowest_priority) {
                 lowest_priority = priority;
                 candidate = voice;
@@ -2528,7 +2528,7 @@ const VoiceCollection = struct {
             } else {
                 self.active_voice_count -= 1;
 
-                var tmp = self.voices[i];
+                const tmp = self.voices[i];
                 self.voices[i] = self.voices[self.active_voice_count];
                 self.voices[self.active_voice_count] = tmp;
             }
@@ -4044,12 +4044,12 @@ const CombFilter = struct {
                 // but the simple Math.Abs version was faster according to some benchmarks.
 
                 var output = self.buffer[buffer_pos];
-                if (@fabs(output) < 1.0E-6) {
+                if (@abs(output) < 1.0E-6) {
                     output = 0.0;
                 }
 
                 self.filter_store = (output * self.damp2) + (self.filter_store * self.damp1);
-                if (@fabs(self.filter_store) < 1.0E-6) {
+                if (@abs(self.filter_store) < 1.0E-6) {
                     self.filter_store = 0.0;
                 }
 
@@ -4116,7 +4116,7 @@ const AllPassFilter = struct {
                 const input = block[block_pos];
 
                 var bufout = self.buffer[buffer_pos];
-                if (@fabs(bufout) < 1.0E-6) {
+                if (@abs(bufout) < 1.0E-6) {
                     bufout = 0.0;
                 }
 
@@ -4151,9 +4151,9 @@ const Chorus = struct {
 
     fn init(allocator: Allocator, sample_rate: i32, delay: f64, depth: f64, frequency: f64) !Self {
         const buffer_length = @as(usize, @intFromFloat(@as(f64, @floatFromInt(sample_rate)) * (delay + depth))) + 2;
-        var buffer_l = try allocator.alloc(f32, buffer_length);
+        const buffer_l = try allocator.alloc(f32, buffer_length);
         errdefer allocator.free(buffer_l);
-        var buffer_r = try allocator.alloc(f32, buffer_length);
+        const buffer_r = try allocator.alloc(f32, buffer_length);
         errdefer allocator.free(buffer_r);
 
         const delay_table_length = @as(usize, @intFromFloat(@round(@as(f64, @floatFromInt(sample_rate)) / frequency)));
@@ -4202,7 +4202,7 @@ const Chorus = struct {
                     position += @as(f64, @floatFromInt(buffer_length));
                 }
 
-                var index1 = @as(usize, @intFromFloat(position));
+                const index1 = @as(usize, @intFromFloat(position));
                 var index2 = index1 + 1;
                 if (index2 == buffer_length) {
                     index2 = 0;
@@ -4225,7 +4225,7 @@ const Chorus = struct {
                     position += @floatFromInt(buffer_length);
                 }
 
-                var index1: usize = @intFromFloat(position);
+                const index1: usize = @intFromFloat(position);
                 var index2: usize = index1 + 1;
                 if (index2 == buffer_length) {
                     index2 = 0;

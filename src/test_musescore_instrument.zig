@@ -9,9 +9,9 @@ fn areEqual(x: f64, y: f64) bool {
         return x == y;
     }
 
-    const m = if (@fabs(x) > @fabs(y)) @fabs(x) else @fabs(y);
+    const m = if (@abs(x) > @abs(y)) @abs(x) else @abs(y);
     const limit = m / 1000.0;
-    const delta = @fabs(x - y);
+    const delta = @abs(x - y);
 
     return delta < limit;
 }
