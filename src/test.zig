@@ -21,6 +21,13 @@ pub fn main() !void {
     const allocator = gpa.allocator();
     defer debug.assert(gpa.deinit() == .ok);
 
+    if (@sizeOf(usize) == 4) {
+        try stdout.print("Running on x86\n", .{});
+    }
+    if (@sizeOf(usize) == 8) {
+        try stdout.print("Running on x64\n", .{});
+    }
+
     try stdout.print("Simple chord...", .{});
     try bw.flush();
     try simple_chord(allocator);
