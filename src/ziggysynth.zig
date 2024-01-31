@@ -84,7 +84,7 @@ fn ReadCounter(comptime T: type) type {
 
         fn skipBytes(self: *Self, num_bytes: u64, options: anytype) !void {
             try self.reader.skipBytes(num_bytes, options);
-            self.count += @truncate(num_bytes);
+            self.count += @intCast(num_bytes);
         }
     };
 }
