@@ -15,7 +15,7 @@ ZiggySynth is a SoundFont MIDI synthesizer written in pure Zig, ported from [Mel
 
 ## Installation
 
-* Zig v0.12.x is required.
+* Zig v0.13.x is required.
 * Copy [ziggysynth.zig](src/ziggysynth.zig) to your project.
 
 
