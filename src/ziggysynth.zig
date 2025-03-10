@@ -82,8 +82,8 @@ fn ReadCounter(comptime T: type) type {
             self.count += buf.len;
         }
 
-        fn skipBytes(self: *Self, num_bytes: u64, options: anytype) !void {
-            try self.reader.skipBytes(num_bytes, options);
+        fn skipBytes(self: *Self, num_bytes: u64) !void {
+            try self.reader.skipBytes(num_bytes, .{});
             self.count += @intCast(num_bytes);
         }
     };
@@ -206,7 +206,7 @@ const SoundFontSampleData = struct {
                 wave_data = try allocator.alloc(i16, size / 2);
                 try rc.readNoEof(@as([*]u8, @ptrCast(wave_data.?.ptr))[0..size]);
             } else if (mem.eql(u8, &id, "sm24")) {
-                try rc.skipBytes(size, .{});
+                try rc.skipBytes(size);
             } else {
                 return ZiggySynthError.InvalidSoundFont;
             }
@@ -274,7 +274,7 @@ const SoundFontParameters = struct {
             } else if (mem.eql(u8, &id, "pbag")) {
                 preset_bag = try ZoneInfo.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "pmod")) {
-                try rc.skipBytes(size, .{});
+                try rc.skipBytes(size);
             } else if (mem.eql(u8, &id, "pgen")) {
                 preset_generators = try Generator.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "inst")) {
@@ -282,7 +282,7 @@ const SoundFontParameters = struct {
             } else if (mem.eql(u8, &id, "ibag")) {
                 instrument_bag = try ZoneInfo.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "imod")) {
-                try rc.skipBytes(size, .{});
+                try rc.skipBytes(size);
             } else if (mem.eql(u8, &id, "igen")) {
                 instrument_generators = try Generator.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "shdr")) {
@@ -3487,7 +3487,7 @@ pub const MidiFile = struct {
                         // Some MIDI files may have events inserted after the EOT.
                         // Such events should be ignored.
                         if (rc.count < size) {
-                            try rc.skipBytes(size - rc.count, .{});
+                            try rc.skipBytes(size - rc.count);
                         }
 
                         return;
@@ -3587,7 +3587,7 @@ pub const MidiFile = struct {
 
     fn discardData(reader: anytype) !void {
         const size: usize = @intCast(try BinaryReader.readIntVariableLength(reader));
-        try reader.skipBytes(size, .{});
+        try reader.skipBytes(size);
     }
 
     fn readTempo(reader: anytype) !i32 {
