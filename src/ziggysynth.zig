@@ -1444,8 +1444,8 @@ pub const SampleHeader = struct {
 
 const LoopMode = struct {
     const NO_LOOP: i32 = 0;
-    const CONTINUOUS: i32 = 0;
-    const LOOP_UNTIL_NOTE_OFF: i32 = 0;
+    const CONTINUOUS: i32 = 1;
+    const LOOP_UNTIL_NOTE_OFF: i32 = 3;
 };
 
 pub const Synthesizer = struct {
