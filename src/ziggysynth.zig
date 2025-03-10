@@ -393,7 +393,7 @@ const Generator = struct {
     }
 
     fn readFromChunk(allocator: Allocator, reader: anytype, size: usize) ![]Self {
-        if (size % 4 != 0) {
+        if (size == 0 or size % 4 != 0) {
             return ZiggySynthError.InvalidSoundFont;
         }
 
@@ -542,7 +542,7 @@ const ZoneInfo = struct {
     }
 
     fn readFromChunk(allocator: Allocator, reader: anytype, size: usize) ![]Self {
-        if (size % 4 != 0) {
+        if (size == 0 or size % 4 != 0) {
             return ZiggySynthError.InvalidSoundFont;
         }
 
@@ -930,7 +930,7 @@ const PresetInfo = struct {
     }
 
     fn readFromChunk(allocator: Allocator, reader: anytype, size: usize) ![]Self {
-        if (size % 38 != 0) {
+        if (size == 0 or size % 38 != 0) {
             return ZiggySynthError.InvalidSoundFont;
         }
 
@@ -1354,7 +1354,7 @@ const InstrumentInfo = struct {
     }
 
     fn readFromChunk(allocator: Allocator, reader: anytype, size: usize) ![]Self {
-        if (size % 22 != 0) {
+        if (size == 0 or size % 22 != 0) {
             return ZiggySynthError.InvalidSoundFont;
         }
 
@@ -1419,7 +1419,7 @@ pub const SampleHeader = struct {
     }
 
     fn readFromChunk(allocator: Allocator, reader: anytype, size: usize) ![]Self {
-        if (size % 46 != 0) {
+        if (size == 0 or size % 46 != 0) {
             return ZiggySynthError.InvalidSoundFont;
         }
 
