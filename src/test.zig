@@ -17,9 +17,9 @@ pub fn main() !void {
     var bw = io.bufferedWriter(stdout_file);
     const stdout = bw.writer();
 
-    var gpa = heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer debug.assert(gpa.deinit() == .ok);
+    var da = heap.DebugAllocator(.{}){};
+    const allocator = da.allocator();
+    defer debug.assert(da.deinit() == .ok);
 
     if (@sizeOf(usize) == 4) {
         try stdout.print("Running on x86\n", .{});

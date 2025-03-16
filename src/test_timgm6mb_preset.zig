@@ -59,9 +59,9 @@ fn check(region: *const PresetRegion, values: *const [39]f64) void {
 }
 
 test "TimGM6mb Preset" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer debug.assert(gpa.deinit() == .ok);
+    var da = std.heap.DebugAllocator(.{}){};
+    const allocator = da.allocator();
+    defer debug.assert(da.deinit() == .ok);
 
     var file = try std.fs.cwd().openFile("TimGM6mb.sf2", .{});
     defer file.close();
