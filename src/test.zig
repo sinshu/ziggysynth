@@ -13,9 +13,9 @@ const MidiFile = ziggysynth.MidiFile;
 const MidiFileSequencer = ziggysynth.MidiFileSequencer;
 
 pub fn main() !void {
-    const stdout_file = io.getStdOut().writer();
-    var bw = io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &stdout_writer.interface;
 
     var da = heap.DebugAllocator(.{}){};
     const allocator = da.allocator();
@@ -29,23 +29,25 @@ pub fn main() !void {
     }
 
     try stdout.print("Simple chord...", .{});
-    try bw.flush();
+    try stdout.flush();
     try simple_chord(allocator);
     try stdout.print("OK\n", .{});
-    try bw.flush();
+    try stdout.flush();
 
     try stdout.print("MIDI file synthesis...", .{});
-    try bw.flush();
+    try stdout.flush();
     try flourish(allocator);
     try stdout.print("OK\n", .{});
-    try bw.flush();
+    try stdout.flush();
 }
 
 fn simple_chord(allocator: Allocator) !void {
     // Load the SoundFont.
     var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
     defer sf2.close();
-    var sound_font = try SoundFont.init(allocator, sf2.reader());
+    var sf2_buffer: [1024]u8 = undefined;
+    var sf2_reader = sf2.reader(&sf2_buffer).interface;
+    var sound_font = try SoundFont.init(allocator, &sf2_reader);
     defer sound_font.deinit();
 
     // Create the synthesizer.
@@ -76,7 +78,9 @@ fn flourish(allocator: Allocator) !void {
     // Load the SoundFont.
     var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
     defer sf2.close();
-    var sound_font = try SoundFont.init(allocator, sf2.reader());
+    var sf2_buffer: [1024]u8 = undefined;
+    var sf2_reader = sf2.reader(&sf2_buffer).interface;
+    var sound_font = try SoundFont.init(allocator, &sf2_reader);
     defer sound_font.deinit();
 
     // Create the synthesizer.
@@ -87,7 +91,9 @@ fn flourish(allocator: Allocator) !void {
     // Load the MIDI file.
     var mid = try fs.cwd().openFile("flourish.mid", .{});
     defer mid.close();
-    var midi_file = try MidiFile.init(allocator, mid.reader());
+    var mid_buffer: [1024]u8 = undefined;
+    var mid_reader = mid.reader(&mid_buffer).interface;
+    var midi_file = try MidiFile.init(allocator, &mid_reader);
     defer midi_file.deinit();
 
     // Create the sequencer.
@@ -132,8 +138,9 @@ fn write_pcm(allocator: Allocator, left: []f32, right: []f32, path: []const u8) 
 
     var pcm = try fs.cwd().createFile(path, .{});
     defer pcm.close();
-    var writer = pcm.writer();
-    try writer.writeAll(@as([*]u8, @ptrCast(buf.ptr))[0..(4 * left.len)]);
+    var pcm_buffer: [1024]u8 = undefined;
+    var pcm_writer = pcm.writer(&pcm_buffer).interface;
+    try pcm_writer.writeAll(@as([*]u8, @ptrCast(buf.ptr))[0..(4 * left.len)]);
 }
 
 test {

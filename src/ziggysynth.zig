@@ -33,13 +33,13 @@ const ArrayMath = struct {
 const BinaryReader = struct {
     fn read(comptime T: type, reader: anytype) !T {
         var data: [@sizeOf(T)]u8 = undefined;
-        _ = try reader.readNoEof(&data);
+        _ = try reader.readSliceAll(&data);
         return @bitCast(data);
     }
 
     fn readBigEndian(comptime T: type, reader: anytype) !T {
         var data: [@sizeOf(T)]u8 = undefined;
-        _ = try reader.readNoEof(&data);
+        _ = try reader.readSliceAll(&data);
         return @byteSwap(@as(T, @bitCast(data)));
     }
 
@@ -77,14 +77,14 @@ fn ReadCounter(comptime T: type) type {
             };
         }
 
-        fn readNoEof(self: *Self, buf: []u8) !void {
-            try self.reader.readNoEof(buf);
+        fn readSliceAll(self: *Self, buf: []u8) !void {
+            try self.reader.readSliceAll(buf);
             self.count += buf.len;
         }
 
-        fn skipBytes(self: *Self, num_bytes: u64) !void {
-            try self.reader.skipBytes(num_bytes, .{});
-            self.count += @intCast(num_bytes);
+        fn discardAll(self: *Self, n: usize) !void {
+            try self.reader.discardAll(n);
+            self.count += @intCast(n);
         }
     };
 }
@@ -100,7 +100,7 @@ pub const SoundFont = struct {
     instruments: []Instrument,
     instrument_regions: []InstrumentRegion,
 
-    pub fn init(allocator: Allocator, reader: anytype) !Self {
+    pub fn init(allocator: Allocator, reader: *std.Io.Reader) !Self {
         var wave_data: ?[]i16 = null;
         var sample_headers: ?[]SampleHeader = null;
         var presets: ?[]Preset = null;
@@ -161,14 +161,14 @@ pub const SoundFont = struct {
         self.allocator.free(self.instrument_regions);
     }
 
-    fn skipInfo(reader: anytype) !void {
+    fn skipInfo(reader: *std.Io.Reader) !void {
         const chunk_id = try BinaryReader.read([4]u8, reader);
         if (!mem.eql(u8, &chunk_id, "LIST")) {
             return ZiggySynthError.InvalidSoundFont;
         }
 
         const size = try BinaryReader.read(u32, reader);
-        try reader.skipBytes(size, .{});
+        try reader.discardAll(size);
     }
 };
 
@@ -178,7 +178,7 @@ const SoundFontSampleData = struct {
     bits_per_sample: i32,
     wave_data: []i16,
 
-    fn init(allocator: Allocator, reader: anytype) !Self {
+    fn init(allocator: Allocator, reader: *std.Io.Reader) !Self {
         var wave_data: ?[]i16 = null;
 
         errdefer {
@@ -204,9 +204,9 @@ const SoundFontSampleData = struct {
 
             if (mem.eql(u8, &id, "smpl")) {
                 wave_data = try allocator.alloc(i16, size / 2);
-                try rc.readNoEof(@as([*]u8, @ptrCast(wave_data.?.ptr))[0..size]);
+                try rc.readSliceAll(@as([*]u8, @ptrCast(wave_data.?.ptr))[0..size]);
             } else if (mem.eql(u8, &id, "sm24")) {
-                try rc.skipBytes(size);
+                try rc.discardAll(size);
             } else {
                 return ZiggySynthError.InvalidSoundFont;
             }
@@ -230,7 +230,7 @@ const SoundFontParameters = struct {
     instruments: []Instrument,
     instrument_regions: []InstrumentRegion,
 
-    fn init(allocator: Allocator, reader: anytype) !Self {
+    fn init(allocator: Allocator, reader: *std.Io.Reader) !Self {
         var preset_infos: ?[]PresetInfo = null;
         var preset_bag: ?[]ZoneInfo = null;
         var preset_generators: ?[]Generator = null;
@@ -274,7 +274,7 @@ const SoundFontParameters = struct {
             } else if (mem.eql(u8, &id, "pbag")) {
                 preset_bag = try ZoneInfo.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "pmod")) {
-                try rc.skipBytes(size);
+                try rc.discardAll(size);
             } else if (mem.eql(u8, &id, "pgen")) {
                 preset_generators = try Generator.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "inst")) {
@@ -282,7 +282,7 @@ const SoundFontParameters = struct {
             } else if (mem.eql(u8, &id, "ibag")) {
                 instrument_bag = try ZoneInfo.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "imod")) {
-                try rc.skipBytes(size);
+                try rc.discardAll(size);
             } else if (mem.eql(u8, &id, "igen")) {
                 instrument_generators = try Generator.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "shdr")) {
