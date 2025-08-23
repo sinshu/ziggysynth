@@ -22,7 +22,9 @@ test "TimGM6mb Sample" {
     var file = try std.fs.cwd().openFile("TimGM6mb.sf2", .{});
     defer file.close();
 
-    var sf = try SoundFont.init(allocator, file.reader());
+    var buf: [1024]u8 = undefined;
+    var reader = file.reader(&buf).interface;
+    var sf = try SoundFont.init(allocator, &reader);
     defer sf.deinit();
 
     // FluteG6
