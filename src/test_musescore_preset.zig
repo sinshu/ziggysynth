@@ -67,8 +67,8 @@ test "MuseScore Preset" {
     defer file.close();
 
     var buf: [1024]u8 = undefined;
-    var reader = file.reader(&buf).interface;
-    var sf = try SoundFont.init(allocator, &reader);
+    var reader = file.reader(&buf);
+    var sf = try SoundFont.init(allocator, &reader.interface);
     defer sf.deinit();
 
     // ============================================================
