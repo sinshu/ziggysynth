@@ -46,8 +46,8 @@ fn simple_chord(allocator: Allocator) !void {
     var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
     defer sf2.close();
     var sf2_buffer: [1024]u8 = undefined;
-    var sf2_reader = sf2.reader(&sf2_buffer).interface;
-    var sound_font = try SoundFont.init(allocator, &sf2_reader);
+    var sf2_reader = sf2.reader(&sf2_buffer);
+    var sound_font = try SoundFont.init(allocator, &sf2_reader.interface);
     defer sound_font.deinit();
 
     // Create the synthesizer.
@@ -79,8 +79,8 @@ fn flourish(allocator: Allocator) !void {
     var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
     defer sf2.close();
     var sf2_buffer: [1024]u8 = undefined;
-    var sf2_reader = sf2.reader(&sf2_buffer).interface;
-    var sound_font = try SoundFont.init(allocator, &sf2_reader);
+    var sf2_reader = sf2.reader(&sf2_buffer);
+    var sound_font = try SoundFont.init(allocator, &sf2_reader.interface);
     defer sound_font.deinit();
 
     // Create the synthesizer.
@@ -92,8 +92,8 @@ fn flourish(allocator: Allocator) !void {
     var mid = try fs.cwd().openFile("flourish.mid", .{});
     defer mid.close();
     var mid_buffer: [1024]u8 = undefined;
-    var mid_reader = mid.reader(&mid_buffer).interface;
-    var midi_file = try MidiFile.init(allocator, &mid_reader);
+    var mid_reader = mid.reader(&mid_buffer);
+    var midi_file = try MidiFile.init(allocator, &mid_reader.interface);
     defer midi_file.deinit();
 
     // Create the sequencer.
