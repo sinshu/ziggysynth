@@ -66,7 +66,9 @@ test "TimGM6mb Preset" {
     var file = try std.fs.cwd().openFile("TimGM6mb.sf2", .{});
     defer file.close();
 
-    var sf = try SoundFont.init(allocator, file.reader());
+    var buf: [1024]u8 = undefined;
+    var reader = file.reader(&buf);
+    var sf = try SoundFont.init(allocator, &reader.interface);
     defer sf.deinit();
 
     // ============================================================
