@@ -139,8 +139,8 @@ fn write_pcm(allocator: Allocator, left: []f32, right: []f32, path: []const u8) 
     var pcm = try fs.cwd().createFile(path, .{});
     defer pcm.close();
     var pcm_buffer: [1024]u8 = undefined;
-    var pcm_writer = pcm.writer(&pcm_buffer).interface;
-    try pcm_writer.writeAll(@as([*]u8, @ptrCast(buf.ptr))[0..(4 * left.len)]);
+    var pcm_writer = pcm.writer(&pcm_buffer);
+    try pcm_writer.interface.writeAll(@as([*]u8, @ptrCast(buf.ptr))[0..(4 * left.len)]);
 }
 
 test {
