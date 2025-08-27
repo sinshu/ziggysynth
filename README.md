@@ -15,7 +15,7 @@ ZiggySynth is a SoundFont MIDI synthesizer written in pure Zig, ported from [Mel
 
 ## Installation
 
-* Zig v0.14.x is required.
+* Zig v0.15.x is required.
 * Copy [ziggysynth.zig](src/ziggysynth.zig) to your project.
 
 
@@ -47,7 +47,9 @@ An example code to synthesize a simple chord:
 // Load the SoundFont.
 var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
 defer sf2.close();
-var sound_font = try SoundFont.init(allocator, sf2.reader());
+var sf2_buffer: [1024]u8 = undefined;
+var sf2_reader = sf2.reader(&sf2_buffer);
+var sound_font = try SoundFont.init(allocator, &sf2_reader.interface);
 defer sound_font.deinit();
 
 // Create the synthesizer.
@@ -62,9 +64,9 @@ synthesizer.noteOn(0, 67, 100);
 
 // The output buffer (3 seconds).
 const sample_count: usize = @intCast(3 * settings.sample_rate);
-var left: []f32 = try allocator.alloc(f32, sample_count);
+const left: []f32 = try allocator.alloc(f32, sample_count);
 defer allocator.free(left);
-var right: []f32 = try allocator.alloc(f32, sample_count);
+const right: []f32 = try allocator.alloc(f32, sample_count);
 defer allocator.free(right);
 
 // Render the waveform.
@@ -77,7 +79,9 @@ Another example code to synthesize a MIDI file:
 // Load the SoundFont.
 var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
 defer sf2.close();
-var sound_font = try SoundFont.init(allocator, sf2.reader());
+var sf2_buffer: [1024]u8 = undefined;
+var sf2_reader = sf2.reader(&sf2_buffer);
+var sound_font = try SoundFont.init(allocator, &sf2_reader.interface);
 defer sound_font.deinit();
 
 // Create the synthesizer.
@@ -88,7 +92,9 @@ defer synthesizer.deinit();
 // Load the MIDI file.
 var mid = try fs.cwd().openFile("flourish.mid", .{});
 defer mid.close();
-var midi_file = try MidiFile.init(allocator, mid.reader());
+var mid_buffer: [1024]u8 = undefined;
+var mid_reader = mid.reader(&mid_buffer);
+var midi_file = try MidiFile.init(allocator, &mid_reader.interface);
 defer midi_file.deinit();
 
 // Create the sequencer.
@@ -99,9 +105,9 @@ sequencer.play(&midi_file, false);
 
 // The output buffer.
 const sample_count = @as(f64, @floatFromInt(settings.sample_rate)) * midi_file.getLength();
-var left: []f32 = try allocator.alloc(f32, @intFromFloat(sample_count));
+const left: []f32 = try allocator.alloc(f32, @intFromFloat(sample_count));
 defer allocator.free(left);
-var right: []f32 = try allocator.alloc(f32, @intFromFloat(sample_count));
+const right: []f32 = try allocator.alloc(f32, @intFromFloat(sample_count));
 defer allocator.free(right);
 
 // Render the waveform.
