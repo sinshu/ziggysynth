@@ -22,9 +22,9 @@ ZiggySynth is a SoundFont MIDI synthesizer written in pure Zig, ported from [Mel
 
 ## Demo
 
-https://www.youtube.com/watch?v=GQj3tF8OdPw
+https://www.youtube.com/watch?v=E8E17ejfRuc
 
-[![Youtube video](https://img.youtube.com/vi/GQj3tF8OdPw/0.jpg)](https://www.youtube.com/watch?v=GQj3tF8OdPw)
+[![Youtube video](https://img.youtube.com/vi/E8E17ejfRuc/0.jpg)](https://www.youtube.com/watch?v=E8E17ejfRuc)
 
 
 
