@@ -22,9 +22,25 @@ ZiggySynth is a SoundFont MIDI synthesizer written in pure Zig, ported from [Mel
 
 ## Demo
 
+### Real-time MIDI file playback
+
+Video:  
 https://www.youtube.com/watch?v=E8E17ejfRuc
 
+Code:  
+https://github.com/sinshu/ziggysynth-test
+
 [![Youtube video](https://img.youtube.com/vi/E8E17ejfRuc/0.jpg)](https://www.youtube.com/watch?v=E8E17ejfRuc)
+
+### Virtual piano
+
+Video:  
+https://www.youtube.com/watch?v=eUKQ9T5Pjbg
+
+Code:  
+https://github.com/sinshu/ziggysynth-test/tree/piano
+
+[![Youtube video](https://img.youtube.com/vi/eUKQ9T5Pjbg/0.jpg)](https://www.youtube.com/watch?v=eUKQ9T5Pjbg)
 
 
 
