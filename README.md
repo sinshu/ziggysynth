@@ -61,10 +61,10 @@ An example code to synthesize a simple chord:
 
 ```zig
 // Load the SoundFont.
-var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
-defer sf2.close();
+var sf2 = try std.Io.Dir.cwd().openFile(io, "TimGM6mb.sf2", .{});
+defer sf2.close(io);
 var sf2_buffer: [1024]u8 = undefined;
-var sf2_reader = sf2.reader(&sf2_buffer);
+var sf2_reader = sf2.reader(io, &sf2_buffer);
 var sound_font = try SoundFont.init(allocator, &sf2_reader.interface);
 defer sound_font.deinit();
 
@@ -93,10 +93,10 @@ Another example code to synthesize a MIDI file:
 
 ```zig
 // Load the SoundFont.
-var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
-defer sf2.close();
+var sf2 = try std.Io.Dir.cwd().openFile(io, "TimGM6mb.sf2", .{});
+defer sf2.close(io);
 var sf2_buffer: [1024]u8 = undefined;
-var sf2_reader = sf2.reader(&sf2_buffer);
+var sf2_reader = sf2.reader(io, &sf2_buffer);
 var sound_font = try SoundFont.init(allocator, &sf2_reader.interface);
 defer sound_font.deinit();
 
@@ -106,10 +106,10 @@ var synthesizer = try Synthesizer.init(allocator, &sound_font, &settings);
 defer synthesizer.deinit();
 
 // Load the MIDI file.
-var mid = try fs.cwd().openFile("flourish.mid", .{});
-defer mid.close();
+var mid = try std.Io.Dir.cwd().openFile(io, "flourish.mid", .{});
+defer mid.close(io);
 var mid_buffer: [1024]u8 = undefined;
-var mid_reader = mid.reader(&mid_buffer);
+var mid_reader = mid.reader(io, &mid_buffer);
 var midi_file = try MidiFile.init(allocator, &mid_reader.interface);
 defer midi_file.deinit();
 
