@@ -19,11 +19,12 @@ test "TimGM6mb Sample" {
     const allocator = da.allocator();
     defer debug.assert(da.deinit() == .ok);
 
-    var file = try std.fs.cwd().openFile("TimGM6mb.sf2", .{});
-    defer file.close();
+    const io = std.testing.io;
+    var file = try std.Io.Dir.cwd().openFile(io, "TimGM6mb.sf2", .{});
+    defer file.close(io);
 
     var buf: [1024]u8 = undefined;
-    var reader = file.reader(&buf);
+    var reader = file.reader(io, &buf);
     var sf = try SoundFont.init(allocator, &reader.interface);
     defer sf.deinit();
 
