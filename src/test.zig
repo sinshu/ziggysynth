@@ -3,7 +3,6 @@ const ziggysynth = @import("ziggysynth.zig");
 const debug = std.debug;
 const fs = std.fs;
 const heap = std.heap;
-const io = std.io;
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const SoundFont = ziggysynth.SoundFont;
@@ -12,41 +11,33 @@ const SynthesizerSettings = ziggysynth.SynthesizerSettings;
 const MidiFile = ziggysynth.MidiFile;
 const MidiFileSequencer = ziggysynth.MidiFileSequencer;
 
-pub fn main() !void {
-    var stdout_buffer: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
-    const stdout = &stdout_writer.interface;
-
+pub fn main(init: std.process.Init) !void {
     var da = heap.DebugAllocator(.{}){};
     const allocator = da.allocator();
     defer debug.assert(da.deinit() == .ok);
 
     if (@sizeOf(usize) == 4) {
-        try stdout.print("Running on x86\n", .{});
+        std.debug.print("Running on x86\n", .{});
     }
     if (@sizeOf(usize) == 8) {
-        try stdout.print("Running on x64\n", .{});
+        std.debug.print("Running on x64\n", .{});
     }
 
-    try stdout.print("Simple chord...", .{});
-    try stdout.flush();
-    try simple_chord(allocator);
-    try stdout.print("OK\n", .{});
-    try stdout.flush();
+    std.debug.print("Simple chord...", .{});
+    try simple_chord(init.io, allocator);
+    std.debug.print("OK\n", .{});
 
-    try stdout.print("MIDI file synthesis...", .{});
-    try stdout.flush();
-    try flourish(allocator);
-    try stdout.print("OK\n", .{});
-    try stdout.flush();
+    std.debug.print("MIDI file synthesis...", .{});
+    try flourish(init.io, allocator);
+    std.debug.print("OK\n", .{});
 }
 
-fn simple_chord(allocator: Allocator) !void {
+fn simple_chord(io: std.Io, allocator: Allocator) !void {
     // Load the SoundFont.
-    var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
-    defer sf2.close();
+    var sf2 = try std.Io.Dir.cwd().openFile(io, "TimGM6mb.sf2", .{});
+    defer sf2.close(io);
     var sf2_buffer: [1024]u8 = undefined;
-    var sf2_reader = sf2.reader(&sf2_buffer);
+    var sf2_reader = sf2.reader(io, &sf2_buffer);
     var sound_font = try SoundFont.init(allocator, &sf2_reader.interface);
     defer sound_font.deinit();
 
@@ -71,15 +62,15 @@ fn simple_chord(allocator: Allocator) !void {
     synthesizer.render(left, right);
 
     // Write the waveform as a PMC file.
-    try write_pcm(allocator, left, right, "simple_chord.pcm");
+    try write_pcm(io, allocator, left, right, "simple_chord.pcm");
 }
 
-fn flourish(allocator: Allocator) !void {
+fn flourish(io: std.Io, allocator: Allocator) !void {
     // Load the SoundFont.
-    var sf2 = try fs.cwd().openFile("TimGM6mb.sf2", .{});
-    defer sf2.close();
+    var sf2 = try std.Io.Dir.cwd().openFile(io, "TimGM6mb.sf2", .{});
+    defer sf2.close(io);
     var sf2_buffer: [1024]u8 = undefined;
-    var sf2_reader = sf2.reader(&sf2_buffer);
+    var sf2_reader = sf2.reader(io, &sf2_buffer);
     var sound_font = try SoundFont.init(allocator, &sf2_reader.interface);
     defer sound_font.deinit();
 
@@ -89,10 +80,10 @@ fn flourish(allocator: Allocator) !void {
     defer synthesizer.deinit();
 
     // Load the MIDI file.
-    var mid = try fs.cwd().openFile("flourish.mid", .{});
-    defer mid.close();
+    var mid = try std.Io.Dir.cwd().openFile(io, "flourish.mid", .{});
+    defer mid.close(io);
     var mid_buffer: [1024]u8 = undefined;
-    var mid_reader = mid.reader(&mid_buffer);
+    var mid_reader = mid.reader(io, &mid_buffer);
     var midi_file = try MidiFile.init(allocator, &mid_reader.interface);
     defer midi_file.deinit();
 
@@ -113,10 +104,10 @@ fn flourish(allocator: Allocator) !void {
     sequencer.render(left, right);
 
     // Write the waveform as a PMC file.
-    try write_pcm(allocator, left, right, "flourish.pcm");
+    try write_pcm(io, allocator, left, right, "flourish.pcm");
 }
 
-fn write_pcm(allocator: Allocator, left: []f32, right: []f32, path: []const u8) !void {
+fn write_pcm(io: std.Io, allocator: Allocator, left: []f32, right: []f32, path: []const u8) !void {
     var max: f32 = 0.0;
     for (0..left.len) |t| {
         if (@abs(left[t]) > max) {
@@ -136,10 +127,10 @@ fn write_pcm(allocator: Allocator, left: []f32, right: []f32, path: []const u8) 
         buf[offset + 1] = @as(i16, @intFromFloat(a * right[t] * 32768.0));
     }
 
-    var pcm = try fs.cwd().createFile(path, .{});
-    defer pcm.close();
+    var pcm = try std.Io.Dir.cwd().createFile(io, path, .{});
+    defer pcm.close(io);
     var pcm_buffer: [1024]u8 = undefined;
-    var pcm_writer = pcm.writer(&pcm_buffer);
+    var pcm_writer = pcm.writer(io, &pcm_buffer);
     try pcm_writer.interface.writeAll(@as([*]u8, @ptrCast(buf.ptr))[0..(4 * left.len)]);
 }
 
