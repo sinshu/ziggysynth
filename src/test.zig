@@ -61,7 +61,7 @@ fn simple_chord(io: std.Io, allocator: Allocator) !void {
     // Render the waveform.
     synthesizer.render(left, right);
 
-    // Write the waveform as a PMC file.
+    // Write the waveform as a PCM file.
     try write_pcm(io, allocator, left, right, "simple_chord.pcm");
 }
 
@@ -103,7 +103,7 @@ fn flourish(io: std.Io, allocator: Allocator) !void {
     // Render the waveform.
     sequencer.render(left, right);
 
-    // Write the waveform as a PMC file.
+    // Write the waveform as a PCM file.
     try write_pcm(io, allocator, left, right, "flourish.pcm");
 }
 
@@ -132,6 +132,7 @@ fn write_pcm(io: std.Io, allocator: Allocator, left: []f32, right: []f32, path: 
     var pcm_buffer: [1024]u8 = undefined;
     var pcm_writer = pcm.writer(io, &pcm_buffer);
     try pcm_writer.interface.writeAll(@as([*]u8, @ptrCast(buf.ptr))[0..(4 * left.len)]);
+    try pcm_writer.interface.flush();
 }
 
 test {
