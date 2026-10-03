@@ -59,9 +59,9 @@ fn check(region: *const PresetRegion, values: *const [39]f64) void {
 }
 
 test "MuseScore Preset" {
-    var da = std.heap.DebugAllocator(.{}){};
+    var da = std.heap.SafeAllocator.init(std.heap.page_allocator, .{});
     const allocator = da.allocator();
-    defer debug.assert(da.deinit() == .ok);
+    defer debug.assert(da.deinit() == 0);
 
     const io = std.testing.io;
     var file = try std.Io.Dir.cwd().openFile(io, "GeneralUser GS MuseScore v1.442.sf2", .{});

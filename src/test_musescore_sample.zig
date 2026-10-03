@@ -15,9 +15,9 @@ fn check(sample: *const SampleHeader, values: *const [7]i32) void {
 }
 
 test "MuseScore Sample" {
-    var da = std.heap.DebugAllocator(.{}){};
+    var da = std.heap.SafeAllocator.init(std.heap.page_allocator, .{});
     const allocator = da.allocator();
-    defer debug.assert(da.deinit() == .ok);
+    defer debug.assert(da.deinit() == 0);
 
     const io = std.testing.io;
     var file = try std.Io.Dir.cwd().openFile(io, "GeneralUser GS MuseScore v1.442.sf2", .{});

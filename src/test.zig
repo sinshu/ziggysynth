@@ -12,9 +12,9 @@ const MidiFile = ziggysynth.MidiFile;
 const MidiFileSequencer = ziggysynth.MidiFileSequencer;
 
 pub fn main(init: std.process.Init) !void {
-    var da = heap.DebugAllocator(.{}){};
+    var da = heap.SafeAllocator.init(heap.page_allocator, .{});
     const allocator = da.allocator();
-    defer debug.assert(da.deinit() == .ok);
+    defer debug.assert(da.deinit() == 0);
 
     if (@sizeOf(usize) == 4) {
         std.debug.print("Running on x86\n", .{});
