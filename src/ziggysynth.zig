@@ -141,7 +141,7 @@ pub const SoundFont = struct {
         instruments = parameters.instruments;
         instrument_regions = parameters.instrument_regions;
 
-        return Self{
+        const sound_font = Self{
             .allocator = allocator,
             .wave_data = wave_data.?,
             .sample_headers = sample_headers.?,
@@ -150,6 +150,29 @@ pub const SoundFont = struct {
             .instruments = instruments.?,
             .instrument_regions = instrument_regions.?,
         };
+
+        try sound_font.sanityCheck();
+        return sound_font;
+    }
+
+    fn sanityCheck(self: *const Self) !void {
+        // Match rustysynth's SoundFont::sanity_check. Calculate addresses in i64
+        // so malformed offsets cannot overflow before the validation runs.
+        for (self.instrument_regions) |*region| {
+            const start = @as(i64, region.sample.start) + region.getStartAddressOffset();
+            const end = @as(i64, region.sample.end) + region.getEndAddressOffset();
+            const start_loop = @as(i64, region.sample.start_loop) + region.getStartLoopAddressOffset();
+            const end_loop = @as(i64, region.sample.end_loop) + region.getEndLoopAddressOffset();
+
+            if (start < 0 or start_loop < 0 or end < 0 or end_loop < 0 or
+                start > math.maxInt(i32) or end > math.maxInt(i32) or
+                start_loop > math.maxInt(i32) or end_loop > math.maxInt(i32) or
+                @as(u64, @intCast(end)) >= self.wave_data.len or
+                @as(u64, @intCast(end_loop)) >= self.wave_data.len or end <= start)
+            {
+                return ZiggySynthError.InvalidSoundFont;
+            }
+        }
     }
 
     pub fn deinit(self: *Self) void {
@@ -167,8 +190,31 @@ pub const SoundFont = struct {
             return ZiggySynthError.InvalidSoundFont;
         }
 
-        const size = try BinaryReader.read(u32, reader);
-        try reader.discardAll(size);
+        const end = try BinaryReader.read(u32, reader);
+        var rc = ReadCounter(@TypeOf(reader)).init(reader);
+
+        const list_type = try BinaryReader.read([4]u8, &rc);
+        if (!mem.eql(u8, &list_type, "INFO")) {
+            return ZiggySynthError.InvalidSoundFont;
+        }
+
+        const known_ids = [_][4]u8{
+            "ifil".*, "isng".*, "INAM".*, "irom".*, "iver".*, "ICRD".*,
+            "IENG".*, "IPRD".*, "ICOP".*, "ICMT".*, "ISFT".*,
+        };
+        while (rc.count < end) {
+            const id = try BinaryReader.read([4]u8, &rc);
+            const size = try BinaryReader.read(u32, &rc);
+            var known = false;
+            for (known_ids) |known_id| {
+                if (mem.eql(u8, &id, &known_id)) {
+                    known = true;
+                    break;
+                }
+            }
+            if (!known) return ZiggySynthError.InvalidSoundFont;
+            try rc.discardAll(size);
+        }
     }
 };
 
@@ -203,8 +249,11 @@ const SoundFontSampleData = struct {
             const size = try BinaryReader.read(u32, &rc);
 
             if (mem.eql(u8, &id, "smpl")) {
+                if (wave_data != null or size % 2 != 0) {
+                    return ZiggySynthError.InvalidSoundFont;
+                }
                 wave_data = try allocator.alloc(i16, size / 2);
-                try rc.readSliceAll(@as([*]u8, @ptrCast(wave_data.?.ptr))[0..size]);
+                try rc.readSliceAll(mem.sliceAsBytes(wave_data.?));
             } else if (mem.eql(u8, &id, "sm24")) {
                 try rc.discardAll(size);
             } else {
@@ -213,6 +262,10 @@ const SoundFontSampleData = struct {
         }
 
         _ = wave_data orelse return ZiggySynthError.InvalidSoundFont;
+
+        if (wave_data.?.len < 2 or mem.eql(u8, mem.sliceAsBytes(wave_data.?)[0..4], "OggS")) {
+            return ZiggySynthError.InvalidSoundFont;
+        }
 
         return Self{
             .bits_per_sample = 16,
@@ -270,22 +323,29 @@ const SoundFontParameters = struct {
             const size = try BinaryReader.read(u32, &rc);
 
             if (mem.eql(u8, &id, "phdr")) {
+                if (preset_infos != null) return ZiggySynthError.InvalidSoundFont;
                 preset_infos = try PresetInfo.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "pbag")) {
+                if (preset_bag != null) return ZiggySynthError.InvalidSoundFont;
                 preset_bag = try ZoneInfo.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "pmod")) {
                 try rc.discardAll(size);
             } else if (mem.eql(u8, &id, "pgen")) {
+                if (preset_generators != null) return ZiggySynthError.InvalidSoundFont;
                 preset_generators = try Generator.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "inst")) {
+                if (instrument_infos != null) return ZiggySynthError.InvalidSoundFont;
                 instrument_infos = try InstrumentInfo.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "ibag")) {
+                if (instrument_bag != null) return ZiggySynthError.InvalidSoundFont;
                 instrument_bag = try ZoneInfo.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "imod")) {
                 try rc.discardAll(size);
             } else if (mem.eql(u8, &id, "igen")) {
+                if (instrument_generators != null) return ZiggySynthError.InvalidSoundFont;
                 instrument_generators = try Generator.readFromChunk(allocator, &rc, size);
             } else if (mem.eql(u8, &id, "shdr")) {
+                if (sample_headers != null) return ZiggySynthError.InvalidSoundFont;
                 sample_headers = try SampleHeader.readFromChunk(allocator, &rc, size);
             } else {
                 return ZiggySynthError.InvalidSoundFont;
@@ -582,6 +642,7 @@ pub const Preset = struct {
     }
 
     fn create(allocator: Allocator, infos: []PresetInfo, all_zones: []Zone, all_regions: []PresetRegion) ![]Self {
+        if (infos.len <= 1) return ZiggySynthError.InvalidSoundFont;
         // The last one is the terminator.
         const preset_count = infos.len - 1;
 
@@ -591,6 +652,7 @@ pub const Preset = struct {
         var region_index: usize = 0;
         for (0..preset_count) |preset_index| {
             const info = infos[preset_index];
+            if (info.zone_end_index <= info.zone_start_index) return ZiggySynthError.InvalidSoundFont;
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
             var region_count: usize = undefined;
@@ -642,13 +704,15 @@ pub const PresetRegion = struct {
         return false;
     }
 
-    fn countRegions(infos: []PresetInfo, all_zones: []Zone) usize {
+    fn countRegions(infos: []PresetInfo, all_zones: []Zone) !usize {
+        if (infos.len <= 1) return ZiggySynthError.InvalidSoundFont;
         // The last one is the terminator.
         const preset_count = infos.len - 1;
 
         var sum: usize = 0;
         for (0..preset_count) |preset_index| {
             const info = infos[preset_index];
+            if (info.zone_end_index <= info.zone_start_index) return ZiggySynthError.InvalidSoundFont;
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
             // Is the first one the global zone?
@@ -686,11 +750,11 @@ pub const PresetRegion = struct {
             setParameter(&gs, &value);
         }
 
-        const id: usize = @intCast(gs[GeneratorType.INSTRUMENT]);
-        if (id >= instruments.len) {
+        const id = gs[GeneratorType.INSTRUMENT];
+        if (id < 0 or id >= instruments.len) {
             return ZiggySynthError.InvalidSoundFont;
         }
-        const instrument = &instruments[id];
+        const instrument = &instruments[@intCast(id)];
 
         return Self{
             .instrument = instrument,
@@ -702,7 +766,7 @@ pub const PresetRegion = struct {
         // The last one is the terminator.
         const preset_count = infos.len - 1;
 
-        var regions = try allocator.alloc(Self, PresetRegion.countRegions(infos, all_zones));
+        var regions = try allocator.alloc(Self, try PresetRegion.countRegions(infos, all_zones));
         errdefer allocator.free(regions);
         var region_index: usize = 0;
 
@@ -968,6 +1032,7 @@ pub const Instrument = struct {
     }
 
     fn create(allocator: Allocator, infos: []InstrumentInfo, all_zones: []Zone, all_regions: []InstrumentRegion) ![]Self {
+        if (infos.len <= 1) return ZiggySynthError.InvalidSoundFont;
         // The last one is the terminator.
         const instrument_count = infos.len - 1;
 
@@ -977,6 +1042,7 @@ pub const Instrument = struct {
         var region_index: usize = 0;
         for (0..instrument_count) |instrument_index| {
             const info = infos[instrument_index];
+            if (info.zone_end_index <= info.zone_start_index) return ZiggySynthError.InvalidSoundFont;
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
             var region_count: usize = undefined;
@@ -1020,13 +1086,15 @@ pub const InstrumentRegion = struct {
         return false;
     }
 
-    fn countRegions(infos: []InstrumentInfo, all_zones: []Zone) usize {
+    fn countRegions(infos: []InstrumentInfo, all_zones: []Zone) !usize {
+        if (infos.len <= 1) return ZiggySynthError.InvalidSoundFont;
         // The last one is the terminator.
         const instrument_count = infos.len - 1;
 
         var sum: usize = 0;
         for (0..instrument_count) |instrument_index| {
             const info = infos[instrument_index];
+            if (info.zone_end_index <= info.zone_start_index) return ZiggySynthError.InvalidSoundFont;
             const zones = all_zones[info.zone_start_index..info.zone_end_index];
 
             // Is the first one the global zone?
@@ -1081,11 +1149,11 @@ pub const InstrumentRegion = struct {
             setParameter(&gs, &value);
         }
 
-        const id: usize = @intCast(gs[GeneratorType.SAMPLE_ID]);
-        if (id >= samples.len) {
+        const id = gs[GeneratorType.SAMPLE_ID];
+        if (id < 0 or id >= samples.len) {
             return ZiggySynthError.InvalidSoundFont;
         }
-        const sample = &samples[id];
+        const sample = &samples[@intCast(id)];
 
         return Self{
             .sample = sample,
@@ -1097,7 +1165,7 @@ pub const InstrumentRegion = struct {
         // The last one is the terminator.
         const instrument_count = infos.len - 1;
 
-        var regions = try allocator.alloc(Self, InstrumentRegion.countRegions(infos, all_zones));
+        var regions = try allocator.alloc(Self, try InstrumentRegion.countRegions(infos, all_zones));
         errdefer allocator.free(regions);
         var region_index: usize = 0;
 

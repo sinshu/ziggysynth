@@ -136,6 +136,7 @@ fn write_pcm(io: std.Io, allocator: Allocator, left: []f32, right: []f32, path: 
 }
 
 test {
+    _ = @import("test_soundfont_validation.zig");
     _ = @import("test_timgm6mb_sample.zig");
     _ = @import("test_timgm6mb_preset.zig");
     _ = @import("test_timgm6mb_instrument.zig");
